@@ -1,7 +1,8 @@
-#version 430 core
+#version 450 core
 
 in vec4 vColour;
+out vec4 outColour;
 
 void main(){
-    gl_FragColor = vColour;
+    outColour = vColour;
 }
