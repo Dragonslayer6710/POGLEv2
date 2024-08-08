@@ -1,6 +1,4 @@
-import numpy as np
-
-from Vertex import *
+from POGLE.Geometry.Vertex import *
 class Buffer:
     def __init__(self, buffers = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW):
         self.buffers: GLenum = buffers
@@ -15,8 +13,6 @@ class Buffer:
 
     def buffer_data(self, size: GLsizeiptr, data: np.ndarray):
         glBufferData(self.buffers, size, data, GL_STATIC_DRAW)
-        r_data = np.frombuffer(glGetBufferSubData(self.buffers, 0, size), dtype=data.dtype)
-        print(r_data)
 
 
 class VertexBuffer(Buffer):
@@ -28,8 +24,10 @@ class ElementBuffer(Buffer):
         super().__init__(GL_ELEMENT_ARRAY_BUFFER)
 
 class VertexArray:
-    def __init__(self, vertices: Vertices, indices: np.ndarray):
+    def __init__(self, vertices: Vertices, indices: list[int], instances: Vertices = None):
         self.EBO = None
+
+        indices = np.array(indices, np.uint16)
 
         self.ID = glGenVertexArrays(1)
         self.bind()
@@ -38,6 +36,14 @@ class VertexArray:
         self.VBO.bind()
         self.VBO.buffer_data(vertices.bytes, vertices.data)
         vertices.setPointers()
+        self.VBO.unbind()
+
+        if instances:
+            self.IBO = VertexBuffer()
+            self.IBO.bind()
+            self.IBO.buffer_data(instances.bytes, instances.data)
+            instances.setPointers(vertices.nextID())
+            self.IBO.unbind()
 
         self.EBO = ElementBuffer()
         self.EBO.bind()

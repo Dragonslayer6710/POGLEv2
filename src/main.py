@@ -1,59 +1,130 @@
-import numpy as np
+from POGLE.Geometry.Mesh import *
 
-from Shader import *
+from POGLE.Camera import *
+from POGLE.Core.Window import *
 
-vertices: Vertices = Vertices(
-    [
-        [
-            [-0.5, -0.5, 0.0,  1.0],
-            [ 1.0,  1.0, 1.0,  1.0],
-        ],
-        [
-            [ 0.5, -0.5, 0.0,  1.0],
-            [ 1.0,  0.0, 0.0,  1.0],
-        ],
-        [
-            [-0.5,  0.5,  0.0,  1.0],
-            [ 0.0,  1.0,  0.0,  1.0],
-        ],
-        [
-            [ 0.5,  0.5,  0.0,  1.0],
-            [ 0.0,  0.0,  1.0,  1.0],
-        ]
+# Screen Dims
+SCR_WIDTH = 800
+SCR_HEIGHT = 600
+ASPECT_RATIO = SCR_WIDTH / SCR_HEIGHT
 
-    ]
-)
-indices = np.array([0,1,2, 1,2,3], np.uint16)
+# camera
+camera = Camera()
+
+if not glfwInit():
+    raise Exception("glfw failed to initialise")
+
+firstMouse = True
+
+
 def main():
-    # Initialise GLFW
-    if not glfw.init():
-        return
-    # Create a windowed mode window and its OpenGL context
-    window = glfw.create_window(640, 480, "Hello World!", None, None)
-    if not window:
-        glfw.terminate()
-        return
+    global deltaTime, lastFrame, firstMouse
 
-    # Make the window's context current
-    glfw.make_context_current(window)
+    window = Window()
+    firstMouse = window.firstMouse
 
-    defShader = ShaderProgram()
-    defShader.use()
+    window.MakeContextCurrent()
 
-    vao = VertexArray(vertices, indices)
-    vao.bind()
+    window.SetFramebufferSizeCallback(framebuffer_size_callback)
+    window.SetCursorPosCallBack(mouse_callback)
+    window.SetScrollCallback(scroll_callback)
 
-    while not glfw.window_should_close(window):
+    # Capture mouse
+    window.SetInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED)
+
+    # defShader = ShaderProgram()
+    # defShader.use()
+
+    # quadModel, pentaModel = glm.mat4(1.0), glm.mat4(1.0)
+
+    # quadModel = glm.translate(glm.scale(quadModel, glm.vec3(0.5)), glm.vec3(-1.0, 0.0, -5.0))
+    # pentaModel = glm.translate(glm.scale(pentaModel, glm.vec3(0.5)), glm.vec3(1.0, 0.0, -5.0))
+
+    # quadMesh = Mesh(Shapes.Quad, instances=Instances(interleave_arrays([quadModel])))
+    # pentaMesh = Mesh(Shapes.Pentagon)
+
+    blockShader = ShaderProgram()
+    blockShader.use()
+    from random import randrange
+    qcMesh = QuadCubeMesh(QuadCubes([
+        NMM(glm.vec3(randrange(-100, 100) , randrange(-100, 100) , randrange(-100, 100) )) for i in range(randrange(2000, 5000))
+    ]))
+
+    #wcMesh = WireframeCubeMesh()
+
+    def Update(window: Window):
+        projection = glm.perspective(glm.radians(camera.Zoom), ASPECT_RATIO, 0.1, 100.0)
+
+        blockShader.setMat4("uProjection", projection)
+        blockShader.setMat4("uView", camera.GetViewMatrix())
+
+
+    def Render(window: Window):
         # Render here
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, None)
-        # Swap front and back buffers
-        glfw.swap_buffers(window)
+        glClearColor(0.5, 0.3, 0.1, 1.0)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        # defShader.setMat4("uModel", pentaModel)
+        # pentaMesh.draw()
+        qcMesh.draw()
+        #qcMeshB.draw()
+        #wcMesh.draw()
 
-        # Poll for and process events
-        glfw.poll_events()
 
-    glfw.terminate()
+
+    # configure global opengl state
+    glEnable(GL_DEPTH_TEST)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glEnable(GL_BLEND)
+    window.Start(process_input, Update, Render)
+
+    glfwTerminate()
+
+
+
+def process_input(window: Window) -> None:
+    deltaTime = window.deltaTime
+    if window.KeyDown(GLFW_KEY_ESCAPE):
+        window.SetShouldClose(True)
+
+    if window.KeyDown(GLFW_KEY_W):
+        camera.ProcessKeyboard(Camera_Movement.FORWARD, deltaTime)
+    if window.KeyDown(GLFW_KEY_S):
+        camera.ProcessKeyboard(Camera_Movement.BACKWARD, deltaTime)
+    if window.KeyDown(GLFW_KEY_A):
+        camera.ProcessKeyboard(Camera_Movement.LEFT, deltaTime)
+    if window.KeyDown(GLFW_KEY_D):
+        camera.ProcessKeyboard(Camera_Movement.RIGHT, deltaTime)
+    if window.KeyDown(GLFW_KEY_SPACE):
+        camera.ProcessKeyboard(Camera_Movement.UP, deltaTime)
+    if window.KeyDown(GLFW_KEY_LEFT_CONTROL):
+        camera.ProcessKeyboard(Camera_Movement.DOWN, deltaTime)
+
+
+# glfw: whenever the window size changed call this
+def framebuffer_size_callback(window: GLFWwindow, width: int, height: int) -> None:
+    # make sure viewport matches new window dimensions
+    glViewport(0, 0, width, height)
+
+
+def mouse_callback(window: GLFWwindow, xpos: float, ypos: float) -> None:
+    global lastX, lastY, firstMouse
+
+    if firstMouse:
+        lastX = xpos
+        lastY = ypos
+        firstMouse = False
+
+    xoffset = xpos - lastX
+    yoffset = lastY - ypos
+
+    lastX = xpos
+    lastY = ypos
+
+    camera.ProcessMouseMovement(xoffset, yoffset)
+
+
+def scroll_callback(window: GLFWwindow, xoffset: float, yoffset: float) -> None:
+    camera.ProcessMouseScroll(yoffset)
 
 if __name__ == "__main__":
     main()
-
