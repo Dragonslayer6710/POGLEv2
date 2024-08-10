@@ -4,8 +4,11 @@ from POGLE.Core.Core import *
 
 import glm
 
+
 def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1)):
-    return NewModelMatrix(t,r,s)
+    return NewModelMatrix(t, r, s)
+
+
 def NewModelMatrix(translation: glm.vec3 = glm.vec3(),
                    rotation: glm.vec3 = glm.vec3(),
                    scale: glm.vec3 = glm.vec3(1.0)) -> glm.mat4:
@@ -47,28 +50,48 @@ _typeBytes = {k: np.dtype(v).itemsize for k, v in _typeDict.items()}
 
 
 class _VertexAttribute:
+    class MatData:
+        def __init__(self, rows: int = 0, cols: int = 0):
+            self.rows: int = rows
+            self.cols: int = cols
+
     __create_key = object()
 
     _type = -1
 
     @classmethod
-    def _new(cls, normalized: GLboolean, subAttribs, divisor: int = 0):
-        return _VertexAttribute(cls.__create_key, _typeBytes[cls._type] * subAttribs, cls._type, normalized, subAttribs, divisor)
+    def _new(cls, normalized: GLboolean, subAttribs, divisor: int = 0, matData: MatData = None):
+        return _VertexAttribute(cls.__create_key, _typeBytes[cls._type] * subAttribs, cls._type, normalized, subAttribs,
+                                divisor, matData)
 
-    def __init__(self, create_key, bytes: GLint, type: GLenum, normalized: GLboolean, size: GLsizei, divisor: int):
+    def __init__(self, create_key, bytes: GLint, type: GLenum, normalized: GLboolean, size: GLsizei, divisor: int,
+                 matData: MatData = None):
         assert (create_key == _VertexAttribute.__create_key), \
             "_VertexAttribute objects must be created using _VertexAttribute._new"
         self.bytes: GLint = bytes
-        self.type: GLenum = type
+        self.dtype: GLenum = type
         self.normalized: GLboolean = normalized
         self.size: GLsizei = size
         self.divisor = divisor
+        self.matData = matData
 
     def setPointer(self, id: GLuint, stride: GLsizei, offset: GLsizei):
         glEnableVertexAttribArray(id)
-        glVertexAttribPointer(id, self.size, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(offset))
-        if self.divisor:
-            glVertexAttribDivisor(id, self.divisor)
+        if self.matData:
+            subSize = int(self.size / self.matData.rows)
+            subBytes = int(self.bytes / self.matData.rows)
+            for c in range(self.matData.cols):
+                glVertexAttribPointer(id + c, subSize, self.dtype, self.normalized, stride,
+                                      ctypes.c_void_p(offset + subBytes * c))
+                glVertexAttribDivisor(id + c, self.divisor)
+                print(
+                    f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
+        else:
+            glVertexAttribPointer(id, self.size, self.dtype, self.normalized, stride, ctypes.c_void_p(offset))
+            print(
+                f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
+            if self.divisor:
+                glVertexAttribDivisor(id, self.divisor)
 
     @classmethod
     def Single(cls, normalized: GLboolean = False, divisor: int = 0):
@@ -91,8 +114,12 @@ class _VertexAttribute:
         return cls._Vec(normalized, 4, divisor)
 
     @classmethod
+    def _Mat(cls, normalized: GLboolean, matRows: int, matCols: int, divisor: int = 0):
+        return cls._new(normalized, matRows * matCols, divisor, _VertexAttribute.MatData(matRows, matCols))
+
+    @classmethod
     def Mat4(cls, normalized: GLboolean = False, divisor=1):
-        return [cls.Vec4(normalized, divisor)] * 4
+        return cls._Mat(normalized, 4, 4, divisor)
 
 
 class BoolVA(_VertexAttribute):
@@ -139,24 +166,17 @@ class VertexLayout:
         self.stride = 0
         self.nextID = 0
         for vertAttrib in self.vertAttribs:
-            if type(vertAttrib) == list:
-                for subAttrib in vertAttrib:
-                    self.stride += subAttrib.bytes
-            else:
-                self.stride += vertAttrib.bytes
+            self.stride += vertAttrib.bytes
 
     def setPointers(self, start=0):
         offset = 0
         for vertAttrib in self.vertAttribs:
-            if type(vertAttrib) == list:
-                for subAttrib in vertAttrib:
-                    subAttrib.setPointer(self.nextID, self.stride, offset)
-                    self.nextID += 1
-                    offset += subAttrib.bytes
-            else:
-                vertAttrib.setPointer(self.nextID, self.stride, offset)
-                offset += vertAttrib.bytes
+            vertAttrib.setPointer(self.nextID, self.stride, offset)
+            offset += vertAttrib.bytes
+            if not vertAttrib.matData:
                 self.nextID += 1
+            else:
+                self.nextID += vertAttrib.matData.cols
 
 
 defaultVertexLayout = VertexLayout([
@@ -177,23 +197,12 @@ class Vertex:
         self.bytes = 0
         for i in range(len(vertexElements)):
             vertexElement = vertexElements[i]
-            try:
-                list(vertexElement)
-            except:
-                vertexElement = [vertexElement]
             vertAttrib = layout.vertAttribs[i]
-            if type(vertAttrib) == list:
-                for i in range(len(vertAttrib)):
-                    subAttrib = vertAttrib[i]
-                    self.bytes += subAttrib.bytes
-                    dtype = _typeDict[subAttrib.type]
-                    subPart = np.array(vertexElement[i], dtype)
-                    self.data = np.concatenate((self.data, subPart), dtype=np.float32)
-            else:
-                self.bytes += vertAttrib.bytes
-                dtype = _typeDict[vertAttrib.type]
-                vertexElement = np.array(vertexElement, dtype)
-                self.data = np.concatenate((self.data, vertexElement), dtype=np.float32)
+
+            self.bytes += vertAttrib.bytes
+            dtype = _typeDict[vertAttrib.dtype]
+            vertexElement = np.array(vertexElement, dtype).flatten()
+            self.data = np.concatenate((self.data, vertexElement), dtype=np.float32)
 
 
 class Vertices:
@@ -219,7 +228,11 @@ class Vertices:
 class Instances(Vertices):
 
     def __init__(self, instancesData: list[Vertices], layout: VertexLayout = defaultInstanceLayout):
-        if type(instancesData) != list[Instances]:
+        if type(instancesData) == Instances:
+            instancesData = [instancesData]
+            self = instancesData
+            return
+        if type(instancesData[0]) != Instances:
             super().__init__(instancesData, layout)
             self.count = len(instancesData)
         else:
@@ -235,4 +248,3 @@ class Instances(Vertices):
                 if instance.bytes != tempBytes and instance.count != tempCount:
                     raise TypeError("Cannot combine instances of different layouts/sizes")
                 self.data = np.concatenate((self.data, instance.data), dtype=np.float32)
-

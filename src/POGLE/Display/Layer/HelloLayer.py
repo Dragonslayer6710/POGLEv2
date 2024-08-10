@@ -55,7 +55,23 @@ class HelloLayer(Layer):
 
             # self.blockShader = ShaderProgram()
             # self.blockShader.use()
-            testBlockShader.use()
+            testQC = QuadCube(
+                NMM(glm.vec3(0.0, 0.0, -5.0)),
+                [
+                    Color.RED,
+                    Color.GREEN,
+                    Color.BLUE,
+                    Color.YELLOW,
+                    Color.CYAN,
+                    Color.MAGENTA
+                ],
+                1.0
+            )
+
+            self.testBlockMesh = QuadCubeMesh(testQC)
+            self.testBlockShader = ShaderProgram("block")
+
+            self.testBlockShader.use()
             from random import randrange
             # self.qcMesh = QuadCubeMesh(QuadCubes([
             #     NMM(glm.vec3(randrange(-20, 20), randrange(-50, 0), randrange(-20, 20))) for i in
@@ -68,7 +84,6 @@ class HelloLayer(Layer):
             # wcMesh = WireframeCubeMesh()
             self.initUpdate = False
         self._Renderer.clear()
-        projection = self._Renderer.get_projection()
 
         if self.cursor_timer > 0: self.cursor_timer -=1
         for boundCtrl in GetBoundControls():
@@ -91,14 +106,16 @@ class HelloLayer(Layer):
                 inpStat.s_MousePosY = inpStat.s_NextMousePosY
         # self.blockShader.setMat4("uProjection", projection)
         # self.blockShader.setMat4("uView", self.camera.GetViewMatrix())
-        testBlockShader.setMat4("uProjection", projection)
-        testBlockShader.setMat4("uView", self.camera.GetViewMatrix())
+        projection = self._Renderer.get_projection()
+        view = self.camera.GetViewMatrix()
+        self.testBlockShader.setMat4("uProjection", projection)
+        self.testBlockShader.setMat4("uView", view)
         # defShader.setMat4("uModel", pentaModel)
         # pentaMesh.draw()
         # self.qcMesh.draw()
         # qcMeshB.draw()
         # wcMesh.draw()
-        testBlockMesh.draw()
+        self.testBlockMesh.draw()
 
     def toggle_cam_control(self) -> bool:
         window = GetApplication().get_window()

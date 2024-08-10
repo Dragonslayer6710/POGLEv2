@@ -1,19 +1,22 @@
 from POGLE.Geometry.Vertex import *
 class Buffer:
-    def __init__(self, buffers = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW):
-        self.buffers: GLenum = buffers
+    def __init__(self, buffers = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW, dtype = GLfloat):
+        self.target: GLenum = buffers
         self.ID: GLuint = glGenBuffers(1)
         self.usage = usage
+        self.dtype = dtype
 
     def bind(self):
-        glBindBuffer(self.buffers, self.ID)
+        glBindBuffer(self.target, self.ID)
 
     def unbind(self):
-        glBindBuffer(self.buffers, 0)
+        glBindBuffer(self.target, 0)
 
     def buffer_data(self, size: GLsizeiptr, data: np.ndarray):
-        glBufferData(self.buffers, size, data, GL_STATIC_DRAW)
-
+        glBufferData(self.target, size, data, GL_STATIC_DRAW)
+        feedback = (self.dtype * len(data))()
+        glGetBufferSubData(self.target, 0, size, feedback)
+        print(list(feedback))
 
 class VertexBuffer(Buffer):
     def __init__(self):
@@ -21,7 +24,7 @@ class VertexBuffer(Buffer):
 
 class ElementBuffer(Buffer):
     def __init__(self):
-        super().__init__(GL_ELEMENT_ARRAY_BUFFER)
+        super().__init__(GL_ELEMENT_ARRAY_BUFFER, dtype=GLushort)
 
 class VertexArray:
     def __init__(self, vertices: Vertices, indices: list[int], instances: Vertices = None):

@@ -26,9 +26,9 @@ class WireframeCube(Shape):
 
 class QuadCube(Quad):
     _instanceLayout = VertexLayout([
-        FloatVA.Mat4(),  # World Model
-        FloatVA.Vec3(),  # Colour
-        FloatVA.Single()  # Alpha
+        FloatVA.Vec3(divisor=1),   # Colour
+        FloatVA.Single(divisor=1), # Alpha
+        FloatVA.Mat4()    # World Model
     ])
 
     face_matrices = [
@@ -47,8 +47,9 @@ class QuadCube(Quad):
         if type(sideColAlphas) == float:
             sideColAlphas = 6 * [sideColAlphas]
         for face in self.face_matrices:
-            face *= worldMatrix
-        super().__init__(self._instanceLayout, interleave_arrays(self.face_matrices, sideCols, sideColAlphas))
+            pass
+            #face *= worldMatrix
+        super().__init__(self._instanceLayout, interleave_arrays(sideCols, sideColAlphas, self.face_matrices))
 
 
 class Shapes:

@@ -10,7 +10,6 @@ class Mesh:
     def __init__(self, vertices: Vertices = None, indices: list[int] = None, textures: list[Texture] = None,
                  instances: Instances = None, primitive=GL_TRIANGLES):
         if None == indices:
-            vertices: Shape = vertices
             indices = vertices.indices
             vertices: Vertices = vertices.vertices
         self.vertices = vertices
@@ -38,9 +37,8 @@ class QuadCubeMesh(Mesh):
     def __init__(self, quadCubes: list[QuadCube]):
         if type(quadCubes) != list:
             quadCubes = [quadCubes]
-        instances = [qc.instances for qc in quadCubes]
-        super().__init__(Shapes.Quad, instances = instances)
-
+        instances = Instances(list([qc.instances for qc in quadCubes]))
+        super().__init__(quadCubes[0], instances=instances)
 
 
 class WireframeCubeMesh(Mesh):
