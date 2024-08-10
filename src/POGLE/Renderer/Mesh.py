@@ -35,7 +35,10 @@ class Mesh:
 
 class QuadCubeMesh(Mesh):
 
-    def __init__(self, instances: Instances):
+    def __init__(self, quadCubes: list[QuadCube]):
+        if type(quadCubes) != list:
+            quadCubes = [quadCubes]
+        instances = [qc.instances for qc in quadCubes]
         super().__init__(Shapes.Quad, instances = instances)
 
 

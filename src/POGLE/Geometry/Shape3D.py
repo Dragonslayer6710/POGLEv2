@@ -1,14 +1,16 @@
 from POGLE.Geometry.Shape2D import *
+
+
 class WireframeCube(Shape):
     positions = [
-        glm.vec3( -1.0,  1.0,  1.0), # Front Top Left
-        glm.vec3(  1.0,  1.0,  1.0), # Front Top Right
-        glm.vec3(  1.0, -1.0,  1.0), # Front Bottom Right
-        glm.vec3( -1.0, -1.0,  1.0), # Front Bottom Left
-        glm.vec3(  1.0,  1.0, -1.0), # Back Top Right
-        glm.vec3( -1.0,  1.0, -1.0), # Back Top Left
-        glm.vec3( -1.0, -1.0, -1.0), # Back Bottom Left
-        glm.vec3(  1.0, -1.0, -1.0), # Back Bottom Right
+        glm.vec3(-1.0, 1.0, 1.0),  # Front Top Left
+        glm.vec3(1.0, 1.0, 1.0),  # Front Top Right
+        glm.vec3(1.0, -1.0, 1.0),  # Front Bottom Right
+        glm.vec3(-1.0, -1.0, 1.0),  # Front Bottom Left
+        glm.vec3(1.0, 1.0, -1.0),  # Back Top Right
+        glm.vec3(-1.0, 1.0, -1.0),  # Back Top Left
+        glm.vec3(-1.0, -1.0, -1.0),  # Back Bottom Left
+        glm.vec3(1.0, -1.0, -1.0),  # Back Bottom Right
     ]
     indices = [
         # Front Quad
@@ -20,27 +22,33 @@ class WireframeCube(Shape):
         # Right Side Lines
         1, 4, 7, 2,
     ]
-    def __init__(self):
-        super().__init__(Color.BLACK, 1.0)
 
-def QuadCubes(worldModels: list[glm.mat4]):
-    class _Face:
-        Left    = NewModelMatrix(glm.vec3(-1.0, 0.0, 0.0), glm.vec3(0, - 90, 0))
-        Front   = NewModelMatrix(glm.vec3(0.0, 0.0, -1.0))
-        Right   = NewModelMatrix(glm.vec3(1.0, 0.0, 0.0), glm.vec3(0, 90, 0))
-        Back    = NewModelMatrix(glm.vec3(0.0, 0.0, 1.0), glm.vec3(0, 180, 0))
-        Top     = NewModelMatrix(glm.vec3(0.0, 1.0, 0.0), glm.vec3(90, 0, 0))
-        Bottom  = NewModelMatrix(glm.vec3(0.0, -1.0, 0.0), glm.vec3(- 90, 0, 0))
 
-    _Faces = glm.array([
-        _Face.Left,
-        _Face.Front,
-        _Face.Right,
-        _Face.Back,
-        _Face.Top,
-        _Face.Bottom
+class QuadCube(Quad):
+    _instanceLayout = VertexLayout([
+        FloatVA.Mat4(),  # World Model
+        FloatVA.Vec3(),  # Colour
+        FloatVA.Single()  # Alpha
     ])
-    return [worldModel * face for face in _Faces for worldModel in worldModels]
+
+    face_matrices = [
+        NewModelMatrix(glm.vec3(-1.0, 0.0, 0.0), glm.vec3(0, - 90, 0)),
+        NewModelMatrix(glm.vec3(0.0, 0.0, -1.0)),
+        NewModelMatrix(glm.vec3(1.0, 0.0, 0.0), glm.vec3(0, 90, 0)),
+        NewModelMatrix(glm.vec3(0.0, 0.0, 1.0), glm.vec3(0, 180, 0)),
+        NewModelMatrix(glm.vec3(0.0, 1.0, 0.0), glm.vec3(90, 0, 0)),
+        NewModelMatrix(glm.vec3(0.0, -1.0, 0.0), glm.vec3(- 90, 0, 0)),
+    ]
+
+    def __init__(self, worldMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
+                 sideColAlphas: list[float] = 6 * [1.0]):
+        if type(sideCols) == glm.vec3:
+            sideCols = 6 * [sideCols]
+        if type(sideColAlphas) == float:
+            sideColAlphas = 6 * [sideColAlphas]
+        for face in self.face_matrices:
+            face *= worldMatrix
+        super().__init__(self._instanceLayout, interleave_arrays(self.face_matrices, sideCols, sideColAlphas))
 
 
 class Shapes:

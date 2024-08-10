@@ -1,5 +1,5 @@
 from MineClone.Block import *
-from POGLE.Core.Application import *
+#from POGLE.Core.Application import *
 
 class HelloLayer(Layer):
 

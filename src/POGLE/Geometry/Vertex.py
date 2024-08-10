@@ -171,29 +171,29 @@ defaultInstanceLayout = VertexLayout([
 
 
 class Vertex:
-    def __init__(self, parts, layout: VertexLayout = defaultVertexLayout):
+    def __init__(self, vertexElements, layout: VertexLayout = defaultVertexLayout):
         self.layout: VertexLayout = layout
         self.data = []
         self.bytes = 0
-        for i in range(len(parts)):
-            part = parts[i]
+        for i in range(len(vertexElements)):
+            vertexElement = vertexElements[i]
             try:
-                list(part)
+                list(vertexElement)
             except:
-                part = [part]
+                vertexElement = [vertexElement]
             vertAttrib = layout.vertAttribs[i]
             if type(vertAttrib) == list:
                 for i in range(len(vertAttrib)):
                     subAttrib = vertAttrib[i]
                     self.bytes += subAttrib.bytes
                     dtype = _typeDict[subAttrib.type]
-                    subPart = np.array(part[i], dtype)
+                    subPart = np.array(vertexElement[i], dtype)
                     self.data = np.concatenate((self.data, subPart), dtype=np.float32)
             else:
                 self.bytes += vertAttrib.bytes
                 dtype = _typeDict[vertAttrib.type]
-                part = np.array(part, dtype)
-                self.data = np.concatenate((self.data, part), dtype=np.float32)
+                vertexElement = np.array(vertexElement, dtype)
+                self.data = np.concatenate((self.data, vertexElement), dtype=np.float32)
 
 
 class Vertices:
@@ -201,6 +201,8 @@ class Vertices:
         self.layout = layout
         self.data = []
         self.bytes = 0
+        if type(verticesData[0]) != list:
+            verticesData = interleave_arrays(verticesData)
         for vertexData in verticesData:
             vertex = Vertex(vertexData, layout)
             self.bytes += vertex.bytes
@@ -216,6 +218,21 @@ class Vertices:
 
 class Instances(Vertices):
 
-    def __init__(self, instancesData, layout: VertexLayout = defaultInstanceLayout):
-        super().__init__(instancesData, layout)
-        self.count = len(instancesData)
+    def __init__(self, instancesData: list[Vertices], layout: VertexLayout = defaultInstanceLayout):
+        if type(instancesData) != list[Instances]:
+            super().__init__(instancesData, layout)
+            self.count = len(instancesData)
+        else:
+            numInstances = len(instancesData)
+            self.layout = instancesData[0].layout
+            self.data = instancesData[0].data
+            tempBytes = instancesData[0].bytes
+            tempCount = instancesData[0].count
+            self.bytes = tempBytes * numInstances
+            self.count = tempCount * numInstances
+
+            for instance in instancesData[1:]:
+                if instance.bytes != tempBytes and instance.count != tempCount:
+                    raise TypeError("Cannot combine instances of different layouts/sizes")
+                self.data = np.concatenate((self.data, instance.data), dtype=np.float32)
+
