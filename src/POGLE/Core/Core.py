@@ -21,3 +21,8 @@ class Color:
     YELLOW  = glm.vec3(1.0, 1.0, 0.0)
     CYAN    = glm.vec3(0.0, 1.0, 1.0)
     WHITE   = glm.vec3(1.0)
+
+def BIT(x):
+    return 1 << x
+
+def POGLE_BIND_EVENT_FN(fn): return lambda *args, **kwargs: fn(*args, **kwargs)

@@ -23,7 +23,7 @@ class WireframeCube(Shape):
     def __init__(self):
         super().__init__(Color.BLACK, 1.0)
 
-class QuadCubes(Instances):
+def QuadCubes(worldModels: list[glm.mat4]):
     class _Face:
         Left    = NewModelMatrix(glm.vec3(-1.0, 0.0, 0.0), glm.vec3(0, - 90, 0))
         Front   = NewModelMatrix(glm.vec3(0.0, 0.0, -1.0))
@@ -40,9 +40,7 @@ class QuadCubes(Instances):
         _Face.Top,
         _Face.Bottom
     ])
-
-    def __init__(self, worldModels: list[glm.mat4]):
-        super().__init__([worldModel * face for face in self._Faces for worldModel in worldModels])
+    return [worldModel * face for face in _Faces for worldModel in worldModels]
 
 
 class Shapes:

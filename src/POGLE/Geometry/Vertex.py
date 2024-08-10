@@ -133,6 +133,8 @@ class DoubleVA(_VertexAttribute):
 
 class VertexLayout:
     def __init__(self, vertAttribs):
+        if type(vertAttribs) != list:
+            vertAttribs = [vertAttribs]
         self.vertAttribs: list[_VertexAttribute] = vertAttribs
         self.stride = 0
         self.nextID = 0
@@ -196,8 +198,6 @@ class Vertex:
 
 class Vertices:
     def __init__(self, verticesData, layout: VertexLayout = defaultVertexLayout):
-        if type(verticesData[0]) != list:
-            verticesData = interleave_arrays(verticesData)
         self.layout = layout
         self.data = []
         self.bytes = 0
