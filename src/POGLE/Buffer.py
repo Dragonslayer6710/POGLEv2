@@ -19,6 +19,10 @@ class Buffer:
         glGetBufferSubData(self.target, 0, size, feedback)
         print(list(feedback))  # Debugging info
 
+    def __del__(self):
+        if glIsBuffer(self.ID):
+            glDeleteBuffers(1, self.ID)
+
 class VertexBuffer(Buffer):
     def __init__(self):
         super().__init__()
@@ -55,6 +59,10 @@ class VertexArray:
         self.EBO.buffer_data(indices.nbytes, indices)
 
         self.unbind()
+
+    def __del__(self):
+        if glIsVertexArray(self.ID):
+            glDeleteVertexArrays(1, self.ID)
 
     def bind(self):
         glBindVertexArray(self.ID)

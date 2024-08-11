@@ -1,9 +1,6 @@
 import random
 
-from MineClone.Block import *
-
-
-# from POGLE.Core.Application import *
+from POGLE.Core.Application import *
 
 class HelloLayer(Layer):
 
@@ -15,6 +12,7 @@ class HelloLayer(Layer):
         self._Renderer = renderer
 
     def OnAttach(self):
+
         InitControls()
         self.initUpdate = True
         self.cursor_timer = 0
@@ -69,7 +67,7 @@ class HelloLayer(Layer):
                         ),
                         [colors[random.randrange(0, len(colors) - 1)] for i in range(6)],
                         [random.randrange(50, 100) / 100 for i in range(6)]
-                    ) for i in range(0, random.randrange(0, 10000)+1)
+                    ) for i in range(0, random.randrange(0, 1000)+1)
                 ]
             )
             testQC = QuadCube(
@@ -86,7 +84,7 @@ class HelloLayer(Layer):
             )
 
             self.testBlockMesh = QuadCubeMesh(testQCs)
-            self.testBlockShader = ShaderProgram("block")
+            self.testBlockShader = ShaderProgram()
 
             self.testBlockShader.use()
 

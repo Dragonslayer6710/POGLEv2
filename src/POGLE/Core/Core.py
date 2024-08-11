@@ -1,3 +1,4 @@
+import os
 
 # import OpenGL.GL
 # import glfw
@@ -26,3 +27,5 @@ def BIT(x):
     return 1 << x
 
 def POGLE_BIND_EVENT_FN(fn): return lambda *args, **kwargs: fn(*args, **kwargs)
+
+cwd = os.getcwd()

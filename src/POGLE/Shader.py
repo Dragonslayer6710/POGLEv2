@@ -15,7 +15,7 @@ class Shader:
     def __init__(self, shaderName: str, shaderType: GLenum):
         self.ID = glCreateShader(shaderType)
 
-        self.shaderPath = f"../assets/shader/{shaderName}.{_shaderExt[shaderType]}"
+        self.shaderPath = f"{cwd}\\..\\assets\\shaders\\{shaderName}.{_shaderExt[shaderType]}"
         with open(self.shaderPath) as f:
             self.source = f.read()
         glShaderSource(self.ID, self.source,)
@@ -25,6 +25,9 @@ class Shader:
             print(
                 f"ERROR::SHADER::{_shaderType[shaderType]}::COMPILATION_FAILED:{_linetab + _linetab.join(glGetShaderInfoLog(self.ID).decode().split(_line))}\n")
 
+    def __del__(self):
+        if glIsShader(self.ID):
+            glDeleteShader(1, self.ID)
 
 class VertexShader(Shader):
     def __init__(self, shaderName: str = "default"):
@@ -38,20 +41,24 @@ class FragmentShader(Shader):
 
 class ShaderProgram:
     def __init__(self, vsName: str = "default", fsName: str = "default"):
-        vertexShader = VertexShader(vsName)
-        fragmentShader = FragmentShader(fsName)
+        self.vertexShader = VertexShader(vsName)
+        self.fragmentShader = FragmentShader(fsName)
 
         self.ID = glCreateProgram()
 
         self.uniLocations = {}
 
-        glAttachShader(self.ID, vertexShader.ID)
-        glAttachShader(self.ID, fragmentShader.ID)
+        glAttachShader(self.ID, self.vertexShader.ID)
+        glAttachShader(self.ID, self.fragmentShader.ID)
 
         glLinkProgram(self.ID)
         if not glGetProgramiv(self.ID, GL_LINK_STATUS):
             print(
                 f"ERROR::SHADER::PROGRAM::LINKING_FAILED:{_linetab + _linetab.join(glGetProgramInfoLog(self.ID).decode().split(_line))}\n")
+
+    def __del__(self):
+        if glIsProgram(self.ID):
+            glDeleteProgram(1, self.ID)
 
     def use(self):
         glUseProgram(self.ID)

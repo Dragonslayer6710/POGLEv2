@@ -1,7 +1,4 @@
-from typing import List
-
-from glm import mat4x4
-
+from POGLE.Shader import *
 from POGLE.Geometry.Texture import *
 from POGLE.Geometry.Shape3D import *
 

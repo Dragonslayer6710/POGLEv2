@@ -32,12 +32,12 @@ class QuadCube(Quad):
     ])
 
     face_matrices = [
-        NewModelMatrix(glm.vec3(-1.0, 0.0, 0.0), glm.vec3(0, - 90, 0)),
-        NewModelMatrix(glm.vec3(0.0, 0.0, -1.0)),
-        NewModelMatrix(glm.vec3(1.0, 0.0, 0.0), glm.vec3(0, 90, 0)),
-        NewModelMatrix(glm.vec3(0.0, 0.0, 1.0), glm.vec3(0, 180, 0)),
-        NewModelMatrix(glm.vec3(0.0, 1.0, 0.0), glm.vec3(90, 0, 0)),
-        NewModelMatrix(glm.vec3(0.0, -1.0, 0.0), glm.vec3(- 90, 0, 0)),
+        NewModelMatrix(glm.vec3(-1.0, 0.0, 0.0), glm.vec3(0, - 90, 0)), # Left
+        NewModelMatrix(glm.vec3(0.0, 0.0, 1.0)), # Front
+        NewModelMatrix(glm.vec3(1.0, 0.0, 0.0), glm.vec3(0, 90, 0)), # Right
+        NewModelMatrix(glm.vec3(0.0, 0.0, -1.0), glm.vec3(0, 180, 0)), # Back
+        NewModelMatrix(glm.vec3(0.0, 1.0, 0.0), glm.vec3(90, 0, 0)), # Top
+        NewModelMatrix(glm.vec3(0.0, -1.0, 0.0), glm.vec3(- 90, 0, 0)), # Bottom
     ]
 
     class Instance:
