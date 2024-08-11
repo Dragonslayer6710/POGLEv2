@@ -5,7 +5,7 @@ from POGLE.Core.Core import *
 import glm
 
 
-def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1)):
+def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1)) -> glm.mat4:
     return NewModelMatrix(t, r, s)
 
 
@@ -76,17 +76,18 @@ class _VertexAttribute:
         self.matData = matData
 
     def setPointer(self, id: GLuint, stride: GLsizei, offset: GLsizei):
-        glEnableVertexAttribArray(id)
         if self.matData:
             subSize = int(self.size / self.matData.rows)
             subBytes = int(self.bytes / self.matData.rows)
             for c in range(self.matData.cols):
+                glEnableVertexAttribArray(id+c)
                 glVertexAttribPointer(id + c, subSize, self.dtype, self.normalized, stride,
                                       ctypes.c_void_p(offset + subBytes * c))
                 glVertexAttribDivisor(id + c, self.divisor)
                 print(
                     f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
         else:
+            glEnableVertexAttribArray(id)
             glVertexAttribPointer(id, self.size, self.dtype, self.normalized, stride, ctypes.c_void_p(offset))
             print(
                 f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
@@ -94,7 +95,7 @@ class _VertexAttribute:
                 glVertexAttribDivisor(id, self.divisor)
 
     @classmethod
-    def Single(cls, normalized: GLboolean = False, divisor: int = 0):
+    def Single(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE):
         return cls._new(normalized, 1, divisor)
 
     @classmethod
@@ -102,24 +103,24 @@ class _VertexAttribute:
         return cls._new(normalized, vecSize, divisor)
 
     @classmethod
-    def Vec2(cls, normalized: GLboolean = False, divisor: int = 0):
+    def Vec2(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE):
         return cls._Vec(normalized, 2, divisor)
 
     @classmethod
-    def Vec3(cls, normalized: GLboolean = False, divisor: int = 0):
+    def Vec3(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE):
         return cls._Vec(normalized, 3, divisor)
 
     @classmethod
-    def Vec4(cls, normalized: GLboolean = False, divisor: int = 0):
+    def Vec4(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE):
         return cls._Vec(normalized, 4, divisor)
 
     @classmethod
-    def _Mat(cls, normalized: GLboolean, matRows: int, matCols: int, divisor: int = 0):
+    def _Mat(cls, divisor: int = 0, matRows: int = 2, matCols: int = 2, normalized: GLboolean = GL_FALSE):
         return cls._new(normalized, matRows * matCols, divisor, _VertexAttribute.MatData(matRows, matCols))
 
     @classmethod
-    def Mat4(cls, normalized: GLboolean = False, divisor=1):
-        return cls._Mat(normalized, 4, 4, divisor)
+    def Mat4(cls, divisor=1, normalized: GLboolean = GL_FALSE ):
+        return cls._Mat(divisor, 4, 4, normalized)
 
 
 class BoolVA(_VertexAttribute):
@@ -168,10 +169,10 @@ class VertexLayout:
         for vertAttrib in self.vertAttribs:
             self.stride += vertAttrib.bytes
 
-    def setPointers(self, start=0):
+    def setPointers(self, extraOffset: int = 0):
         offset = 0
         for vertAttrib in self.vertAttribs:
-            vertAttrib.setPointer(self.nextID, self.stride, offset)
+            vertAttrib.setPointer(self.nextID, self.stride, offset + extraOffset)
             offset += vertAttrib.bytes
             if not vertAttrib.matData:
                 self.nextID += 1
@@ -201,8 +202,11 @@ class Vertex:
 
             self.bytes += vertAttrib.bytes
             dtype = _typeDict[vertAttrib.dtype]
-            vertexElement = np.array(vertexElement, dtype).flatten()
-            self.data = np.concatenate((self.data, vertexElement), dtype=np.float32)
+            isMat = type(vertexElement) == glm.mat4
+            vertexElement = np.array(vertexElement, dtype)
+            if isMat:
+                vertexElement = vertexElement.reshape(4,4).T
+            self.data = np.concatenate((self.data, vertexElement.flatten()), dtype=np.float32)
 
 
 class Vertices:
@@ -217,9 +221,9 @@ class Vertices:
             self.bytes += vertex.bytes
             self.data = np.concatenate((self.data, vertex.data), dtype=np.float32)
 
-    def setPointers(self, start: int = 0):
+    def setPointers(self, start: int = 0, extraOffset: int = 0):
         self.layout.nextID = start
-        self.layout.setPointers(start)
+        self.layout.setPointers(extraOffset)
 
     def nextID(self) -> int:
         return self.layout.nextID

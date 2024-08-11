@@ -34,12 +34,20 @@ class Mesh:
 
 class QuadCubeMesh(Mesh):
 
-    def __init__(self, quadCubes: list[QuadCube]):
-        if type(quadCubes) != list:
+    def __init__(self, quadCubes: List[QuadCube]):
+        if not isinstance(quadCubes, list):
             quadCubes = [quadCubes]
-        instances = Instances(list([qc.instances for qc in quadCubes]))
-        super().__init__(quadCubes[0], instances=instances)
 
+        # Collect all instances from quadCubes
+        all_instances = [qc.instances for qc in quadCubes]
+        instances = Instances(all_instances)
+
+        # Assuming quadCubes[0] holds the correct vertex data and indices
+        vertices = quadCubes[0].vertices
+        indices = quadCubes[0].indices
+
+        # Initialize Mesh with instances
+        super().__init__(vertices=vertices, indices=indices, instances=instances)
 
 class WireframeCubeMesh(Mesh):
     def __init__(self):

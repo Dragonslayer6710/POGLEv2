@@ -47,9 +47,9 @@ class QuadCube(Quad):
         if type(sideColAlphas) == float:
             sideColAlphas = 6 * [sideColAlphas]
         for face in self.face_matrices:
-            pass
-            #face *= worldMatrix
-        super().__init__(self._instanceLayout, interleave_arrays(sideCols, sideColAlphas, self.face_matrices))
+            face = worldMatrix * face
+        instanceData = interleave_arrays(sideCols, sideColAlphas, self.face_matrices)
+        super().__init__(self._instanceLayout, instanceData)
 
 
 class Shapes:

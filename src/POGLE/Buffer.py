@@ -13,21 +13,28 @@ class Buffer:
         glBindBuffer(self.target, 0)
 
     def buffer_data(self, size: GLsizeiptr, data: np.ndarray):
-        glBufferData(self.target, size, data, GL_STATIC_DRAW)
+        glBufferData(self.target, size, data, self.usage)
+        # Feedback is for debugging, may be removed or disabled in production
         feedback = (self.dtype * len(data))()
         glGetBufferSubData(self.target, 0, size, feedback)
-        print(list(feedback))
+        print(list(feedback))  # Debugging info
 
 class VertexBuffer(Buffer):
     def __init__(self):
         super().__init__()
+
+    def buffer_data(self, vertices: Vertices, instances: Instances = None):
+        if not instances:
+            super().buffer_data(vertices.bytes, vertices.data)
+        else:
+            super().buffer_data(vertices.bytes + instances.bytes, np.concatenate([vertices.data, instances.data], axis=0))
 
 class ElementBuffer(Buffer):
     def __init__(self):
         super().__init__(GL_ELEMENT_ARRAY_BUFFER, dtype=GLushort)
 
 class VertexArray:
-    def __init__(self, vertices: Vertices, indices: list[int], instances: Vertices = None):
+    def __init__(self, vertices: Vertices, indices: list[int], instances: Instances = None):
         self.EBO = None
 
         indices = np.array(indices, np.uint16)
@@ -37,16 +44,11 @@ class VertexArray:
 
         self.VBO = VertexBuffer()
         self.VBO.bind()
-        self.VBO.buffer_data(vertices.bytes, vertices.data)
+        self.VBO.buffer_data(vertices, instances)
         vertices.setPointers()
-        self.VBO.unbind()
-
         if instances:
-            self.IBO = VertexBuffer()
-            self.IBO.bind()
-            self.IBO.buffer_data(instances.bytes, instances.data)
-            instances.setPointers(vertices.nextID())
-            self.IBO.unbind()
+            instances.setPointers(vertices.nextID(), vertices.bytes)
+        self.VBO.unbind()
 
         self.EBO = ElementBuffer()
         self.EBO.bind()
