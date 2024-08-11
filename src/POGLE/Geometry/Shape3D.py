@@ -40,16 +40,40 @@ class QuadCube(Quad):
         NewModelMatrix(glm.vec3(0.0, -1.0, 0.0), glm.vec3(- 90, 0, 0)),
     ]
 
-    def __init__(self, worldMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
+    class Instance:
+        def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
+                     sideColAlphas: list[float] = 6 * [1.0]):
+            if type(outerModelMatrix) != glm.mat4:
+                raise TypeError("QuadCube outerModelMatrix must be a glm.mat4")
+
+            if type(sideCols) == glm.vec3:
+                sideCols = 6 * [sideCols]
+            elif len(sideCols) != 6:
+                raise TypeError("QuadCube sideCols must be of length 6")
+
+            if type(sideColAlphas) == float:
+                sideColAlphas = 6 * [sideColAlphas]
+            elif len(sideColAlphas) != 6:
+                raise TypeError("QuadCube sideColAlphas must be of length 6")
+
+            face_matrices = [outerModelMatrix * face for face in QuadCube.face_matrices]
+            self.data = interleave_arrays(sideCols, sideColAlphas, face_matrices)
+
+    def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
                  sideColAlphas: list[float] = 6 * [1.0]):
-        if type(sideCols) == glm.vec3:
-            sideCols = 6 * [sideCols]
-        if type(sideColAlphas) == float:
-            sideColAlphas = 6 * [sideColAlphas]
-        for face in self.face_matrices:
-            face = worldMatrix * face
-        instanceData = interleave_arrays(sideCols, sideColAlphas, self.face_matrices)
+        isList = type(outerModelMatrix) == list
+        isDataLayout = type(outerModelMatrix) == QuadCube.Instance
+        if isList or isDataLayout:
+            if isDataLayout:
+                instanceData = outerModelMatrix.data
+            elif type(outerModelMatrix[0]) == QuadCube.Instance:
+                instanceData = []
+                for instance in outerModelMatrix:
+                    instanceData += instance.data
+        else:
+            instanceData = QuadCube.Instance(outerModelMatrix, sideCols, sideColAlphas).data
         super().__init__(self._instanceLayout, instanceData)
+
 
 
 class Shapes:

@@ -1,5 +1,9 @@
+import random
+
 from MineClone.Block import *
-#from POGLE.Core.Application import *
+
+
+# from POGLE.Core.Application import *
 
 class HelloLayer(Layer):
 
@@ -14,6 +18,7 @@ class HelloLayer(Layer):
         InitControls()
         self.initUpdate = True
         self.cursor_timer = 0
+
     def OnEvent(self, e: Event):
         typ = e.getEventType()
         if e.isInCategory(Event.Category.Mouse):
@@ -33,28 +38,40 @@ class HelloLayer(Layer):
             elif typ == Event.Type.KeyReleased:
                 Input.SetState(e.getKeyCode(), Input.State.RELEASE)
 
-
     def OnDetach(self):
         pass
 
     def OnImGuiRender(self):
         pass
 
+    import random
     def OnUpdate(self, deltaTime: float):
         if self.initUpdate:
-            # defShader = ShaderProgram()
-            # defShader.use()
-
-            # quadModel, pentaModel = glm.mat4(1.0), glm.mat4(1.0)
-
-            # quadModel = glm.translate(glm.scale(quadModel, glm.vec3(0.5)), glm.vec3(-1.0, 0.0, -5.0))
-            # pentaModel = glm.translate(glm.scale(pentaModel, glm.vec3(0.5)), glm.vec3(1.0, 0.0, -5.0))
-
-            # quadMesh = Mesh(Shapes.Quad, instances=Instances(interleave_arrays([quadModel])))
-            # pentaMesh = Mesh(Shapes.Pentagon)
-
-            # self.blockShader = ShaderProgram()
-            # self.blockShader.use()
+            colors = [
+                Color.BLACK,
+                Color.RED,
+                Color.GREEN,
+                Color.BLUE,
+                Color.MAGENTA,
+                Color.YELLOW,
+                Color.CYAN,
+                Color.WHITE
+            ]
+            testQCs = QuadCube(
+                [
+                    QuadCube.Instance(
+                        NMM(
+                            glm.vec3(
+                                random.randrange(-50, 50),
+                                random.randrange(-50, 50),
+                                random.randrange(-50, 50)
+                            )
+                        ),
+                        [colors[random.randrange(0, len(colors) - 1)] for i in range(6)],
+                        [random.randrange(50, 100) / 100 for i in range(6)]
+                    ) for i in range(0, random.randrange(0, 10000)+1)
+                ]
+            )
             testQC = QuadCube(
                 NMM(glm.vec3(0.0, 0.0, -5.0)),
                 [
@@ -68,15 +85,10 @@ class HelloLayer(Layer):
                 1.0
             )
 
-            self.testBlockMesh = QuadCubeMesh(testQC)
+            self.testBlockMesh = QuadCubeMesh(testQCs)
             self.testBlockShader = ShaderProgram("block")
 
             self.testBlockShader.use()
-            from random import randrange
-            # self.qcMesh = QuadCubeMesh(QuadCubes([
-            #     NMM(glm.vec3(randrange(-20, 20), randrange(-50, 0), randrange(-20, 20))) for i in
-            #     range(randrange(1000, 3000))
-            # ]))
 
             glClearColor(0.5, 0.3, 0.1, 1.0)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -85,7 +97,7 @@ class HelloLayer(Layer):
             self.initUpdate = False
         self._Renderer.clear()
 
-        if self.cursor_timer > 0: self.cursor_timer -=1
+        if self.cursor_timer > 0: self.cursor_timer -= 1
         for boundCtrl in GetBoundControls():
             ctrlID = boundCtrl.GetID()
             if boundCtrl.GetInputState().value:

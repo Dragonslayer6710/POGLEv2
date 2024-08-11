@@ -168,6 +168,7 @@ class VertexLayout:
         self.nextID = 0
         for vertAttrib in self.vertAttribs:
             self.stride += vertAttrib.bytes
+        self.count = len(vertAttribs)
 
     def setPointers(self, extraOffset: int = 0):
         offset = 0
@@ -228,27 +229,9 @@ class Vertices:
     def nextID(self) -> int:
         return self.layout.nextID
 
-
 class Instances(Vertices):
 
-    def __init__(self, instancesData: list[Vertices], layout: VertexLayout = defaultInstanceLayout):
-        if type(instancesData) == Instances:
-            instancesData = [instancesData]
-            self = instancesData
-            return
-        if type(instancesData[0]) != Instances:
-            super().__init__(instancesData, layout)
-            self.count = len(instancesData)
-        else:
-            numInstances = len(instancesData)
-            self.layout = instancesData[0].layout
-            self.data = instancesData[0].data
-            tempBytes = instancesData[0].bytes
-            tempCount = instancesData[0].count
-            self.bytes = tempBytes * numInstances
-            self.count = tempCount * numInstances
+    def __init__(self, instancesData, layout: VertexLayout = defaultInstanceLayout):
+        super().__init__(instancesData, layout)
+        self.count = len(instancesData)
 
-            for instance in instancesData[1:]:
-                if instance.bytes != tempBytes and instance.count != tempCount:
-                    raise TypeError("Cannot combine instances of different layouts/sizes")
-                self.data = np.concatenate((self.data, instance.data), dtype=np.float32)
