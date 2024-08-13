@@ -25,56 +25,115 @@ class WireframeCube(Shape):
 
 
 class QuadCube(Quad):
-    _instanceLayout = VertexLayout([
-        FloatVA.Vec3(divisor=1),   # Colour
-        FloatVA.Single(divisor=1), # Alpha
-        FloatVA.Mat4()    # World Model
-    ])
-
     face_matrices = [
-        NewModelMatrix(glm.vec3(-1.0, 0.0, 0.0), glm.vec3(0, - 90, 0)), # Left
-        NewModelMatrix(glm.vec3(0.0, 0.0, 1.0)), # Front
-        NewModelMatrix(glm.vec3(1.0, 0.0, 0.0), glm.vec3(0, 90, 0)), # Right
-        NewModelMatrix(glm.vec3(0.0, 0.0, -1.0), glm.vec3(0, 180, 0)), # Back
-        NewModelMatrix(glm.vec3(0.0, 1.0, 0.0), glm.vec3(90, 0, 0)), # Top
-        NewModelMatrix(glm.vec3(0.0, -1.0, 0.0), glm.vec3(- 90, 0, 0)), # Bottom
+        NewModelMatrix(glm.vec3(-0.5, 0.0, 0.0), glm.vec3(0, - 90, 0)),  # Left
+        NewModelMatrix(glm.vec3(0.0, 0.0, 0.5)),  # Front
+        NewModelMatrix(glm.vec3(0.5, 0.0, 0.0), glm.vec3(0, 90, 0)),  # Right
+        NewModelMatrix(glm.vec3(0.0, 0.0, -0.5), glm.vec3(0, 180, 0)),  # Back
+        NewModelMatrix(glm.vec3(0.0, 0.5, 0.0), glm.vec3(90, 0, 0)),  # Top
+        NewModelMatrix(glm.vec3(0.0, -0.5, 0.0), glm.vec3(- 90, 0, 0)),  # Bottom
     ]
 
+    def __init__(self, outerModelMatrices: list[glm.mat4], vertexElements: list = [], vertexAttributes: list = [], instanceElements: list = [], instanceAttributes: list = []):
+        if type(outerModelMatrices) != list:
+            outerModelMatrices = [outerModelMatrices]
+        #[instanceElements[i].append(outerModelMatrices[i]) for i in range(len(instanceElements))]
+        outerModelMatrices = [[outerModelMatrix * face for face in self.face_matrices for outerModelMatrix in outerModelMatrices]]
+        super().__init__(vertexElements, vertexAttributes, instanceElements + outerModelMatrices, instanceAttributes + [FloatVA.Mat4()])
+
+
+class ColQuadCube(QuadCube):
     class Instance:
         def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
                      sideColAlphas: list[float] = 6 * [1.0]):
             if type(outerModelMatrix) != glm.mat4:
-                raise TypeError("QuadCube outerModelMatrix must be a glm.mat4")
+                raise TypeError("ColQuadCube outerModelMatrix must be a glm.mat4")
 
             if type(sideCols) == glm.vec3:
                 sideCols = 6 * [sideCols]
             elif len(sideCols) != 6:
-                raise TypeError("QuadCube sideCols must be of length 6")
+                raise TypeError("ColQuadCube sideCols must be of length 6")
 
             if type(sideColAlphas) == float:
                 sideColAlphas = 6 * [sideColAlphas]
             elif len(sideColAlphas) != 6:
-                raise TypeError("QuadCube sideColAlphas must be of length 6")
+                raise TypeError("ColQuadCube sideColAlphas must be of length 6")
 
-            face_matrices = [outerModelMatrix * face for face in QuadCube.face_matrices]
-            self.data = interleave_arrays(sideCols, sideColAlphas, face_matrices)
+            self.data = [sideCols, sideColAlphas, outerModelMatrix]
 
-    def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
+    _instanceAttributes = [FloatVA.Vec3(1), FloatVA.Single(1)]
+    def __init__(self, outerModelMatrices: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
                  sideColAlphas: list[float] = 6 * [1.0]):
-        isList = type(outerModelMatrix) == list
-        isDataLayout = type(outerModelMatrix) == QuadCube.Instance
-        if isList or isDataLayout:
-            if isDataLayout:
-                instanceData = outerModelMatrix.data
-            elif type(outerModelMatrix[0]) == QuadCube.Instance:
-                instanceData = []
-                for instance in outerModelMatrix:
-                    instanceData += instance.data
+        isList = type(outerModelMatrices) == list
+        isInstance = type(outerModelMatrices) == ColQuadCube.Instance
+        instanceElements = []
+        if isList or isInstance:
+            if isInstance: #
+                instanceElements = outerModelMatrices.data[0:2]
+                outerModelMatrices = outerModelMatrices.data[2]
+            elif type(outerModelMatrices[0]) == ColQuadCube.Instance:
+                instanceElements = [[], []]
+                temp = []
+                for instance in outerModelMatrices:
+                    instanceElements[0] += instance.data[0]
+                    instanceElements[1] += instance.data[1]
+                    temp.append(instance.data[2])
+                outerModelMatrices = temp
         else:
-            instanceData = QuadCube.Instance(outerModelMatrix, sideCols, sideColAlphas).data
-        super().__init__(self._instanceLayout, instanceData)
+            instance = self.Instance(outerModelMatrices, sideCols, sideColAlphas)
+            instanceElements = instance.data[0:2]
+            outerModelMatrices = instance.data[2]
+        super().__init__(outerModelMatrices, instanceElements = instanceElements, instanceAttributes=self._instanceAttributes)
 
 
+class TexQuadCube(QuadCube):
+    texture_coords = [
+        glm.vec2(0.0, 0.0),
+        glm.vec2(1.0, 0.0),
+        glm.vec2(0.0, 1.0),
+        glm.vec2(1.0, 1.0)
+    ]
+
+    class Instance:
+        def __init__(self, outerModelMatrix: glm.mat4, texPos: list[glm.vec2], texSize: list[glm.vec2]):
+            if type(outerModelMatrix) != glm.mat4:
+                raise TypeError("TexQuadCube outerModelMatrix must be a glm.mat4")
+
+            if type(texPos) == glm.vec2:
+                texPos = 6 * [texPos]
+            elif len(texPos) != 6:
+                raise TypeError("TexQuadCube texPos must be of length 6")
+
+            if type(texSize) == glm.vec2:
+                texSize = 6 * [texSize]
+            elif len(texSize) != 6:
+                raise TypeError("TexQuadCube texSize must be of length 6")
+
+            self.data = [texPos, texSize, outerModelMatrix]
+
+    _vertexAttributes = [FloatVA.Vec2()]
+    _instanceAttributes = [FloatVA.Vec2(1), FloatVA.Vec2(1)]
+    def __init__(self, outerModelMatrices: list[glm.mat4], texPos: list[glm.vec2], texSize: list[glm.vec2]):
+        isList = type(outerModelMatrices) == list
+        isInstance = type(outerModelMatrices) == TexQuadCube.Instance
+        instanceElements = []
+        if isList or isInstance:
+            if isInstance:  #
+                instanceElements = outerModelMatrices.data[0:2]
+                outerModelMatrices = outerModelMatrices.data[2]
+            elif type(outerModelMatrices[0]) == TexQuadCube.Instance:
+                instanceElements = [[], []]
+                temp = []
+                for instance in outerModelMatrices:
+                    instanceElements[0] += instance.data[0]
+                    instanceElements[1] += instance.data[1]
+                    temp.append(instance.data[2])
+                outerModelMatrices = temp
+        else:
+            instance = self.Instance(outerModelMatrices, texPos, texSize)
+            instanceElements = instance.data[0:2]
+            outerModelMatrices = instance.data[2]
+        super().__init__(outerModelMatrices, [self.texture_coords], self._vertexAttributes, instanceElements, self._instanceAttributes)
 
 class Shapes:
     # 2D

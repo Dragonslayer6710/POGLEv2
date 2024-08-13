@@ -12,7 +12,7 @@ class Mesh:
         self.vertices = vertices
         self.indices = indices
         self.count = len(indices)
-        self.textures = textures
+        self.texture: Texture = textures
         self.instances: Instances = instances
 
         self.primitive = primitive
@@ -20,18 +20,30 @@ class Mesh:
         self.VAO = VertexArray(self.vertices, self.indices, self.instances)
         self.VAO.unbind()
 
-    def draw(self, shaderProgram: ShaderProgram = None):
+    def bind(self):
         self.VAO.bind()
+        if self.texture:
+            self.texture.bind()
+
+    def unbind(self):
+        self.VAO.unbind()
+        if self.texture:
+            self.texture.unbind()
+
+    def draw(self, shaderProgram: ShaderProgram):
+        self.bind()
+        if self.texture:
+            shaderProgram.setInt("tex0", self.texture.get_texture_slot())
         if self.instances:
             glDrawElementsInstanced(self.primitive, self.count, GL_UNSIGNED_SHORT, None, self.instances.count)
         else:
             glDrawElements(self.primitive, self.count, GL_UNSIGNED_SHORT, None)
-        self.VAO.unbind()
+        self.unbind()
 
 
 class QuadCubeMesh(Mesh):
 
-    def __init__(self, qc: QuadCube):
+    def __init__(self, qc: ColQuadCube):
         # Initialize Mesh with instances
         super().__init__(qc, instances=qc.instances)
 

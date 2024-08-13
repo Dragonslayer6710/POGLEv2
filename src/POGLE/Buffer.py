@@ -15,9 +15,9 @@ class Buffer:
     def buffer_data(self, size: GLsizeiptr, data: np.ndarray):
         glBufferData(self.target, size, data, self.usage)
         # Feedback is for debugging, may be removed or disabled in production
-        feedback = (self.dtype * len(data))()
-        glGetBufferSubData(self.target, 0, size, feedback)
-        print(list(feedback))  # Debugging info
+        # feedback = (self.dtype * len(data))()
+        # glGetBufferSubData(self.target, 0, size, feedback)
+        # print(f"Buffering {size} bytes of data: {list(feedback)}")  # Debugging info
 
     def __del__(self):
         if glIsBuffer(self.ID):

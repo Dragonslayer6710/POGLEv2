@@ -1,7 +1,7 @@
 import random
 
 from POGLE.Core.Application import *
-
+from MineClone.World import *
 class HelloLayer(Layer):
 
     def __init__(self, renderer: Renderer):
@@ -55,9 +55,9 @@ class HelloLayer(Layer):
                 Color.CYAN,
                 Color.WHITE
             ]
-            testQCs = QuadCube(
+            testQCs = ColQuadCube(
                 [
-                    QuadCube.Instance(
+                    ColQuadCube.Instance(
                         NMM(
                             glm.vec3(
                                 random.randrange(-50, 50),
@@ -70,7 +70,7 @@ class HelloLayer(Layer):
                     ) for i in range(0, random.randrange(0, 1000)+1)
                 ]
             )
-            testQC = QuadCube(
+            testQC = ColQuadCube(
                 NMM(glm.vec3(0.0, 0.0, -5.0)),
                 [
                     Color.RED,
@@ -83,8 +83,15 @@ class HelloLayer(Layer):
                 1.0
             )
 
-            self.testBlockMesh = QuadCubeMesh(testQCs)
-            self.testBlockShader = ShaderProgram()
+            #testBlock = Block(NMM(glm.vec3(0,0,-5)))
+            #testBlock.visibleSides[Block.Side.Top] = False
+            #instance_data = testBlock.get_instance_data()
+
+            testWorld = World()
+            instance_data = testWorld.get_instance_data()
+            #self.testBlockMesh = QuadCubeMesh(testQCs)
+            self.testBlockMesh = Mesh(Block.vertices, Block.indices, Block._TextureAtlas, Instances(instance_data, Block.instanceLayout, True))
+            self.testBlockShader = ShaderProgram("block", "block")
 
             self.testBlockShader.use()
 
@@ -125,7 +132,7 @@ class HelloLayer(Layer):
         # self.qcMesh.draw()
         # qcMeshB.draw()
         # wcMesh.draw()
-        self.testBlockMesh.draw()
+        self.testBlockMesh.draw(self.testBlockShader)
 
     def toggle_cam_control(self) -> bool:
         window = GetApplication().get_window()

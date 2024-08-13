@@ -1,12 +1,5 @@
-import os
-
-# import OpenGL.GL
-# import glfw
-
-from OpenGL.GL import *
-from glfw.GLFW import *
-
-from glfw import _GLFWwindow as GLFWwindow
+from POGLE.OGL.OpenGLContext import *
+import os, sys, random, copy
 
 import glm
 import numpy as np
@@ -29,3 +22,7 @@ def BIT(x):
 def POGLE_BIND_EVENT_FN(fn): return lambda *args, **kwargs: fn(*args, **kwargs)
 
 cwd = os.getcwd()
+
+def split_array(l: np.ndarray, n: int) -> np.ndarray:
+    k, m = divmod(len(l), n)
+    return np.array([l[i * k + min(i, m):(i+1)*k+min(i+1,m)] for i in range(n)], l.dtype)

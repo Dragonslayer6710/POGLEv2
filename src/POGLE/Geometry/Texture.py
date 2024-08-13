@@ -51,6 +51,9 @@ class Texture:
                 Texture._FreedTextureSlots.insert(i + 1, self._TextureSlot)
         self._TextureSlot = None
 
+    def get_texture_slot(self):
+        return self._TextureSlot
+
     @staticmethod
     def _get_next_texture_slot() -> GLuint:
         if Texture._FreedTextureSlots == []:

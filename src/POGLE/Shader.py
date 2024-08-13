@@ -75,3 +75,6 @@ class ShaderProgram:
 
     def setMat4Array(self, name: str, arr: glm.array):
         glUniformMatrix4fv(self._gul(name), arr.length, GL_FALSE, arr)
+
+    def setInt(self, name: str, value: GLint):
+        glUniform1i(self._gul(name), value)

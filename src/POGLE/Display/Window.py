@@ -1,3 +1,6 @@
+from glfw.GLFW import *
+from glfw import _GLFWwindow as GLFWwindow
+
 from POGLE.Event.ApplicationEvent import *
 from POGLE.Event.MouseEvent import *
 from POGLE.Event.KeyEvent import *

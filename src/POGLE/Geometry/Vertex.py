@@ -1,4 +1,5 @@
 import glm
+import numpy as np
 
 from POGLE.Core.Core import *
 
@@ -84,13 +85,13 @@ class _VertexAttribute:
                 glVertexAttribPointer(id + c, subSize, self.dtype, self.normalized, stride,
                                       ctypes.c_void_p(offset + subBytes * c))
                 glVertexAttribDivisor(id + c, self.divisor)
-                print(
-                    f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
+               # print(
+               #     f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
         else:
             glEnableVertexAttribArray(id)
             glVertexAttribPointer(id, self.size, self.dtype, self.normalized, stride, ctypes.c_void_p(offset))
-            print(
-                f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
+            # print(
+            #    f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
             if self.divisor:
                 glVertexAttribDivisor(id, self.divisor)
 
@@ -211,16 +212,20 @@ class Vertex:
 
 
 class Vertices:
-    def __init__(self, verticesData, layout: VertexLayout = defaultVertexLayout):
+    def __init__(self, verticesData, layout: VertexLayout = defaultVertexLayout, directData: bool = False):
         self.layout = layout
-        self.data = []
+        self.data: np.ndarray = []
         self.bytes = 0
-        if type(verticesData[0]) != list:
-            verticesData = interleave_arrays(verticesData)
-        for vertexData in verticesData:
-            vertex = Vertex(vertexData, layout)
-            self.bytes += vertex.bytes
-            self.data = np.concatenate((self.data, vertex.data), dtype=np.float32)
+        if directData:
+            self.data = verticesData
+            self.bytes = self.data.nbytes
+        else:
+            if type(verticesData[0]) != list:
+                verticesData = interleave_arrays(verticesData)
+            for vertexData in verticesData:
+                vertex = Vertex(vertexData, layout)
+                self.bytes += vertex.bytes
+                self.data = np.concatenate((self.data, vertex.data), dtype=np.float32)
 
     def setPointers(self, start: int = 0, extraOffset: int = 0):
         self.layout.nextID = start
@@ -231,7 +236,10 @@ class Vertices:
 
 class Instances(Vertices):
 
-    def __init__(self, instancesData, layout: VertexLayout = defaultInstanceLayout):
-        super().__init__(instancesData, layout)
-        self.count = len(instancesData)
+    def __init__(self, instancesData, layout: VertexLayout = defaultInstanceLayout, directData: bool = False):
+        super().__init__(instancesData, layout, directData)
+        if directData:
+            self.count = int(len(instancesData) / layout.count)
+        else:
+            self.count = len(instancesData)
 
