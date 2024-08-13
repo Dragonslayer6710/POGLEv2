@@ -3,9 +3,9 @@ import copy
 from MineClone.Block import *
 from MineClone.Block import _QUADS_IN_BLOCK
 
-_CHUNK_WIDTH = 8
+_CHUNK_WIDTH = 4
 _CHUNK_WIDTH_RANGE = range(_CHUNK_WIDTH)
-_CHUNK_HEIGHT = 8
+_CHUNK_HEIGHT = 4
 _CHUNK_HEIGHT_RANGE = range(_CHUNK_HEIGHT)
 
 _BLOCKS_IN_CHUNK = _CHUNK_WIDTH * _CHUNK_WIDTH * _CHUNK_HEIGHT

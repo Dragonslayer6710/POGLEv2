@@ -86,7 +86,6 @@ class HelloLayer(Layer):
             #testBlock = Block(NMM(glm.vec3(0,0,-5)))
             #testBlock.visibleSides[Block.Side.Top] = False
             #instance_data = testBlock.get_instance_data()
-
             testWorld = World()
             instance_data = testWorld.get_instance_data()
             #self.testBlockMesh = QuadCubeMesh(testQCs)
@@ -98,6 +97,10 @@ class HelloLayer(Layer):
             glClearColor(0.5, 0.3, 0.1, 1.0)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
             glEnable(GL_BLEND)
+            glEnable(GL_CULL_FACE)
+            glCullFace(GL_BACK)
+            glFrontFace(GL_CW)
+
             # wcMesh = WireframeCubeMesh()
             self.initUpdate = False
         self._Renderer.clear()

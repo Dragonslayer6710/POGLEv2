@@ -26,12 +26,12 @@ class WireframeCube(Shape):
 
 class QuadCube(Quad):
     face_matrices = [
-        NewModelMatrix(glm.vec3(-0.5, 0.0, 0.0), glm.vec3(0, - 90, 0)),  # Left
+        NewModelMatrix(glm.vec3(-0.5, 0.0, 0.0), glm.vec3(0, -90, 0)),  # Left
         NewModelMatrix(glm.vec3(0.0, 0.0, 0.5)),  # Front
         NewModelMatrix(glm.vec3(0.5, 0.0, 0.0), glm.vec3(0, 90, 0)),  # Right
         NewModelMatrix(glm.vec3(0.0, 0.0, -0.5), glm.vec3(0, 180, 0)),  # Back
-        NewModelMatrix(glm.vec3(0.0, 0.5, 0.0), glm.vec3(90, 0, 0)),  # Top
-        NewModelMatrix(glm.vec3(0.0, -0.5, 0.0), glm.vec3(- 90, 0, 0)),  # Bottom
+        NewModelMatrix(glm.vec3(0.0, 0.5, 0.0), glm.vec3(-90, 0, 0)),  # Top
+        NewModelMatrix(glm.vec3(0.0, -0.5, 0.0), glm.vec3( 90, 0, 0)),  # Bottom
     ]
 
     def __init__(self, outerModelMatrices: list[glm.mat4], vertexElements: list = [], vertexAttributes: list = [], instanceElements: list = [], instanceAttributes: list = []):
@@ -89,9 +89,9 @@ class ColQuadCube(QuadCube):
 class TexQuadCube(QuadCube):
     texture_coords = [
         glm.vec2(0.0, 0.0),
-        glm.vec2(1.0, 0.0),
         glm.vec2(0.0, 1.0),
-        glm.vec2(1.0, 1.0)
+        glm.vec2(1.0, 1.0),
+        glm.vec2(1.0, 0.0)
     ]
 
     class Instance:

@@ -19,13 +19,13 @@ class Shape:
 class Quad(Shape):
     positions = [
         glm.vec3(-0.5, -0.5, 0.0),
-        glm.vec3(0.5, -0.5, 0.0),
-        glm.vec3(-0.5, 0.5, 0.0),
-        glm.vec3(0.5, 0.5, 0.0)
+        glm.vec3(-0.5,  0.5, 0.0),
+        glm.vec3( 0.5,  0.5, 0.0),
+        glm.vec3( 0.5, -0.5, 0.0)
     ]
     indices = [
         0, 1, 2,
-        1, 2, 3
+        2, 3, 0
     ]
 
 
