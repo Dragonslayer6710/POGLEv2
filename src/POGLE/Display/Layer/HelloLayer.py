@@ -1,7 +1,7 @@
 import random
 
 from POGLE.Core.Application import *
-from MineClone.World import *
+from MineClone.WorldRenderer import *
 class HelloLayer(Layer):
 
     def __init__(self, renderer: Renderer):
@@ -87,12 +87,23 @@ class HelloLayer(Layer):
             #testBlock.visibleSides[Block.Side.Top] = False
             #instance_data = testBlock.get_instance_data()
             testWorld = World()
-            instance_data = testWorld.get_instance_data()
-            #self.testBlockMesh = QuadCubeMesh(testQCs)
-            self.testBlockMesh = Mesh(Block.vertices, Block.indices, Block._TextureAtlas, Instances(instance_data, Block.instanceLayout, True))
-            self.testBlockShader = ShaderProgram("block", "block")
+            #instance_data = testWorld.get_instance_data()
+            testWorld.update()
+            self.testWorldRenderer = WorldRenderer(testWorld, glm.vec3())
 
-            self.testBlockShader.use()
+            #instance_data = testWorldRenderer.get_instance_data()
+
+            #self.testBlockMesh = QuadCubeMesh(testQCs)
+            #self.testBlockMesh = Mesh(Block.vertices, Block.indices, Block._TextureAtlas, Instances(instance_data, Block.instanceLayout, True))
+            #self.testBlockShader = ShaderProgram("block", "block")
+            #self.testBlockShader.use()
+
+            self.testWorldRenderer.worldBlockShader.use()
+
+            self.renderDistance = 4
+            #self.testWorldRenderer._set_render_distance(self.renderDistance)
+
+
 
             glClearColor(0.5, 0.3, 0.1, 1.0)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -128,14 +139,14 @@ class HelloLayer(Layer):
         # self.blockShader.setMat4("uView", self.camera.GetViewMatrix())
         projection = self._Renderer.get_projection()
         view = self.camera.GetViewMatrix()
-        self.testBlockShader.setMat4("uProjection", projection)
-        self.testBlockShader.setMat4("uView", view)
+        self.testWorldRenderer.worldBlockShader.setMat4("uProjection", projection)
+        self.testWorldRenderer.worldBlockShader.setMat4("uView", view)
         # defShader.setMat4("uModel", pentaModel)
         # pentaMesh.draw()
         # self.qcMesh.draw()
         # qcMeshB.draw()
         # wcMesh.draw()
-        self.testBlockMesh.draw(self.testBlockShader)
+        self.testWorldRenderer.draw()
 
     def toggle_cam_control(self) -> bool:
         window = GetApplication().get_window()

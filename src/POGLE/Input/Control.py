@@ -11,6 +11,7 @@ class _CtrlIDMove(Enum):
 class _CtrlIDConfig(Enum):
     CAM_CTRL_TGL = len(_CtrlIDMove)
     QUIT = auto()
+    CYCLE_RENDER_DISTANCE = auto()
 class Control:
     class ID:
         Move = _CtrlIDMove
@@ -82,7 +83,8 @@ _ControlTypes: dict[Control.ID, Control.Type] = {
     CTRL.ID.Move.DOWN: CTRL.Type.MOVEMENT,
 
     CTRL.ID.Config.CAM_CTRL_TGL: CTRL.Type.CONFIG,
-    CTRL.ID.Config.QUIT: CTRL.Type.CONFIG
+    CTRL.ID.Config.QUIT: CTRL.Type.CONFIG,
+    CTRL.ID.Config.CYCLE_RENDER_DISTANCE: CTRL.Type.CONFIG
 }
 
 
@@ -113,8 +115,8 @@ _InitialControls: dict[Control.ID, int] = {
     CTRL.ID.Move.DOWN: KeyCode.LeftControl,
 
     CTRL.ID.Config.CAM_CTRL_TGL: MouseCode.ButtonLeft,
-    CTRL.ID.Config.QUIT: KeyCode.Escape
-
+    CTRL.ID.Config.QUIT: KeyCode.Escape,
+    CTRL.ID.Config.CYCLE_RENDER_DISTANCE: KeyCode.Tab
 }
 
 

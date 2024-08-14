@@ -22,24 +22,25 @@ class World:
             for chunkZ in range(self.worldWidth):
                 chunk = self.chunks[chunkX][chunkZ]
                 worldChunkID = chunkX * self.worldWidth + chunkZ
-                chunk.set(self, worldChunkID)
-
-        self.init()
-
-    def init(self):
-        for chunkRow in self.chunks:
-            for chunk in chunkRow:
-                chunk.init()
+                chunk.init(self, worldChunkID)
                 self.chunk_instances[chunk.worldChunkID] = chunk.get_instance_data()
+
+
     def _get_chunk(self, x: int, z: int) -> Chunk:
         return self.chunks[x][z]
 
-    def get_chunk(self, worldChunkPos: glm.vec2) -> Chunk:
+    def get_chunk_from_world_chunk_pos(self, worldChunkPos: glm.vec2) -> Chunk:
         if worldChunkPos[0] not in _WORLD_CHUNK_RANGE or worldChunkPos[1] not in _WORLD_CHUNK_RANGE:
             return CHUNK_NULL
         x, z = [int(i) for i in worldChunkPos + _WORLD_CHUNK_AXIS_LENGTH]
         return self._get_chunk(x, z)
 
+    def get_chunk_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Chunk:
+        x, z = [int(i) for i in (glm.vec2(worldBlockPos.xz) + _WORLD_CHUNK_AXIS_LENGTH) // _WORLD_CHUNK_AXIS_LENGTH]
+        return self._get_chunk(x, z)
+
+    def get_block_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Block:
+        self.get_chunk_from_world_block_pos(worldBlockPos).get_block_from_world_block_pos(worldBlockPos)
 
     def update(self) -> bool:
         updated = False
