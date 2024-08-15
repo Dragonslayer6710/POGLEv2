@@ -12,6 +12,10 @@ class _CtrlIDConfig(Enum):
     CAM_CTRL_TGL = len(_CtrlIDMove)
     QUIT = auto()
     CYCLE_RENDER_DISTANCE = auto()
+    CHUNK_WEST = auto()
+    CHUNK_SOUTH = auto()
+    CHUNK_EAST = auto()
+    CHUNK_NORTH = auto()
 class Control:
     class ID:
         Move = _CtrlIDMove
@@ -22,6 +26,42 @@ class Control:
         MOVEMENT = auto()
         CAMERA = auto()
         CONFIG = auto()
+
+    _idTypeMap: dict[ID, Type] = {
+        ID.Move.FORWARD: Type.MOVEMENT,
+        ID.Move.BACKWARD: Type.MOVEMENT,
+        ID.Move.LEFT: Type.MOVEMENT,
+        ID.Move.RIGHT: Type.MOVEMENT,
+        ID.Move.UP: Type.MOVEMENT,
+        ID.Move.DOWN: Type.MOVEMENT,
+
+        ID.Config.CAM_CTRL_TGL: Type.CONFIG,
+        ID.Config.QUIT: Type.CONFIG,
+
+        ID.Config.CYCLE_RENDER_DISTANCE: Type.CONFIG,
+        ID.Config.CHUNK_WEST: Type.CONFIG,
+        ID.Config.CHUNK_SOUTH: Type.CONFIG,
+        ID.Config.CHUNK_EAST: Type.CONFIG,
+        ID.Config.CHUNK_NORTH: Type.CONFIG
+    }
+
+    _InitialBinds: dict[ID, int] = {
+        ID.Move.FORWARD: KeyCode.W,
+        ID.Move.BACKWARD: KeyCode.S,
+        ID.Move.LEFT: KeyCode.A,
+        ID.Move.RIGHT: KeyCode.D,
+        ID.Move.UP: KeyCode.Space,
+        ID.Move.DOWN: KeyCode.LeftControl,
+
+        ID.Config.CAM_CTRL_TGL: MouseCode.ButtonLeft,
+        ID.Config.QUIT: KeyCode.Escape,
+
+        ID.Config.CYCLE_RENDER_DISTANCE: KeyCode.Tab,
+        ID.Config.CHUNK_WEST: KeyCode.KP4,
+        ID.Config.CHUNK_SOUTH: KeyCode.KP2,
+        ID.Config.CHUNK_EAST: KeyCode.KP6,
+        ID.Config.CHUNK_NORTH: KeyCode.KP8,
+    }
 
     class State(Enum):
         UNBOUND = 0
@@ -48,7 +88,7 @@ class Control:
         return self._ControlID
 
     def GetType(self) -> Type:
-        return _ControlTypes[self._ControlID]
+        return Control._idTypeMap[self._ControlID]
 
     def GetInputState(self) -> Input.State:
         return self._BoundInput.InstGetState()
@@ -74,18 +114,7 @@ CTRL = Control
 
 _Controls: dict[Control.ID, Control] = None
 _BoundControls: list[Control] = None
-_ControlTypes: dict[Control.ID, Control.Type] = {
-    CTRL.ID.Move.FORWARD: CTRL.Type.MOVEMENT,
-    CTRL.ID.Move.BACKWARD: CTRL.Type.MOVEMENT,
-    CTRL.ID.Move.LEFT: CTRL.Type.MOVEMENT,
-    CTRL.ID.Move.RIGHT: CTRL.Type.MOVEMENT,
-    CTRL.ID.Move.UP: CTRL.Type.MOVEMENT,
-    CTRL.ID.Move.DOWN: CTRL.Type.MOVEMENT,
 
-    CTRL.ID.Config.CAM_CTRL_TGL: CTRL.Type.CONFIG,
-    CTRL.ID.Config.QUIT: CTRL.Type.CONFIG,
-    CTRL.ID.Config.CYCLE_RENDER_DISTANCE: CTRL.Type.CONFIG
-}
 
 
 def ResetControls(initialControls: dict[Control.ID, int] = None):
@@ -105,22 +134,7 @@ def _InitControls(initialControls: dict[Control.ID, int] = None):
 def _NewControl(ctrl: Control):
     _Controls[ctrl.GetID()] = ctrl
 
-
-_InitialControls: dict[Control.ID, int] = {
-    CTRL.ID.Move.FORWARD: KeyCode.W,
-    CTRL.ID.Move.BACKWARD: KeyCode.S,
-    CTRL.ID.Move.LEFT: KeyCode.A,
-    CTRL.ID.Move.RIGHT: KeyCode.D,
-    CTRL.ID.Move.UP: KeyCode.Space,
-    CTRL.ID.Move.DOWN: KeyCode.LeftControl,
-
-    CTRL.ID.Config.CAM_CTRL_TGL: MouseCode.ButtonLeft,
-    CTRL.ID.Config.QUIT: KeyCode.Escape,
-    CTRL.ID.Config.CYCLE_RENDER_DISTANCE: KeyCode.Tab
-}
-
-
-def InitControls(initialControls: dict[Control.ID, int] = _InitialControls):
+def InitControls(initialControls: dict[Control.ID, int] = Control._InitialBinds):
     _InitControls(initialControls)
 
 

@@ -2,12 +2,12 @@ from MineClone.World import *
 
 
 class WorldRenderer:
-    from MineClone.World import _CHUNKS_IN_ROW
-    def __init__(self, world: World, originPos: glm.vec3, renderDistance: int = _CHUNKS_IN_ROW):
+    def __init__(self, world: World, originPos: glm.vec3, renderDistance: int = 1):
         self.world: World = world
         self.originPos: glm.vec3 = originPos
         self.originChunk: Chunk = None
         self.renderDistance: int = None
+        self._chunksInRow: int = None
         self.renderedChunks: list[list[Chunk]] = None
         self.chunk_instances: list = None
 
@@ -41,16 +41,16 @@ class WorldRenderer:
 
     def _shift_rendered_chunks(self, originDelta: glm.vec2):
         isShiftX = originDelta[0]
-        isShiftEast = isShiftX == -1
+        isShiftWest = isShiftX == -1
 
         isShiftZ = originDelta[1]
         isShiftSouth = isShiftZ == -1
         if isShiftX:
-            if isShiftEast:
-                # Origin shifted east (lose west most chunks)
+            if isShiftWest:
+                # Origin shifted West (lose East most chunks)
                 self.renderedChunks.pop()
             else:
-                # Origin shifted west (lose east most chunks)
+                # Origin shifted East (lose West most chunks)
                 self.renderedChunks.pop(0)
         if isShiftZ:
             if isShiftSouth:
@@ -60,16 +60,16 @@ class WorldRenderer:
                 # Origin shifted north (lose south most chunks)
                 [zAxis.pop(0) for zAxis in self.renderedChunks]
         if isShiftX:
-            if isShiftEast:
-                # Insert array of chunks to the east of those remaining in the array to the major array
+            if isShiftWest:
+                # Insert array of chunks to the West of those remaining in the array to the major array
                 self.renderedChunks.insert(
                     0,
-                    [chunk.adjChunks[Chunk.Side.East] for chunk in self.renderedChunks[0]]
+                    [chunk.neighbourChunks[Chunk.Cardinal.West] if chunk.is_chunk else CHUNK_NULL for chunk in self.renderedChunks[0]]
                 )
             else:
-                # Append array of chunks to the west of those remaining in the array to the major array
+                # Append array of chunks to the East of those remaining in the array to the major array
                 self.renderedChunks.append(
-                    [chunk.adjChunks[Chunk.Side.West] for chunk in self.renderedChunks[-1]]
+                    [chunk.neighbourChunks[Chunk.Cardinal.East] if chunk.is_chunk else CHUNK_NULL for chunk in self.renderedChunks[-1]]
                 )
         if isShiftZ:
             if isShiftSouth:
@@ -77,26 +77,27 @@ class WorldRenderer:
                 [
                     zAxis.insert(
                         0,
-                        zAxis[0].adjChunks[Chunk.Side.South]
+                        zAxis[0].neighbourChunks[Chunk.Cardinal.South]
                     ) if zAxis[0].is_chunk else zAxis.insert(0, CHUNK_NULL) for zAxis in self.renderedChunks
                 ]
             else:
                 # Append chunk to zAxis of chunks to the North of each chunk in each zAxis from the major array
                 [
                     zAxis.append(
-                        zAxis[-1].adjChunks[Chunk.Side.South]
+                        zAxis[-1].neighbourChunks[Chunk.Cardinal.North]
                     ) if zAxis[-1].is_chunk else zAxis.append(CHUNK_NULL) for zAxis in self.renderedChunks
                 ]
         self._set_instance_data()
 
     def _set_render_distance(self, renderDistance: int):
         self.renderDistance = renderDistance
+        self._chunksInRow = 2 * renderDistance + 1
         self._build_rendered_chunks()
 
 
     def _build_rendered_chunks(self):
-        self.renderedChunks = [[None for i in range(self.renderDistance)] for i in range(self.renderDistance)]
-        self.originChunk.get_chunks_to_render(self.renderedChunks, self.renderDistance - 1)
+        self.renderedChunks = [[CHUNK_NULL for i in range(self._chunksInRow)] for j in range(self._chunksInRow)]
+        self.originChunk.get_chunks_to_render(self.renderedChunks, self._chunksInRow)
         self._set_instance_data()
 
     def _set_instance_data(self):
@@ -109,13 +110,27 @@ class WorldRenderer:
     def get_instance_data(self):
         chunk_instances = list(filter((None).__ne__, self.chunk_instances))
         if len(chunk_instances) == 0:
-            return None
+            return np.array([])
         return np.concatenate(chunk_instances, dtype=chunk_instances[0].dtype)
 
     def _build_mesh(self):
         self.worldMesh = Mesh(Block.vertices, Block.indices, Block._TextureAtlas,
                               Instances(self.get_instance_data(), Block.instanceLayout, True))
 
+    def draw(self, projection: glm.mat4, view: glm.mat4):
+        self.worldMesh.draw(self.worldBlockShader, projection, view)
 
-    def draw(self):
-        self.worldMesh.draw(self.worldBlockShader)
+    def __str__(self):
+        print_str = ""
+        for z in range(self._chunksInRow):
+            for x in range(self._chunksInRow):
+                if x > 0:
+                    print_str += ",\t"
+                chunk = self.renderedChunks[x][z]
+                if chunk.is_chunk:
+                    print_str += f"({chunk.worldChunkPos[0]},\t{chunk.worldChunkPos[1]})"
+                else:
+                    print_str += f"(NaN,\tNaN)"
+                if self._chunksInRow - 1 == x:
+                    print_str += "\n"
+        return print_str

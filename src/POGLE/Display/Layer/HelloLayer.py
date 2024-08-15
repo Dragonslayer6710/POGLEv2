@@ -2,6 +2,7 @@ import random
 
 from POGLE.Core.Application import *
 from MineClone.WorldRenderer import *
+from MineClone.World import _WORLD_CHUNK_AXIS_LENGTH
 class HelloLayer(Layer):
 
     def __init__(self, renderer: Renderer):
@@ -16,6 +17,8 @@ class HelloLayer(Layer):
         InitControls()
         self.initUpdate = True
         self.cursor_timer = 0
+        self.tab_timer = 0
+        self.chunk_shift_timer = 0
 
     def OnEvent(self, e: Event):
         typ = e.getEventType()
@@ -86,11 +89,10 @@ class HelloLayer(Layer):
             #testBlock = Block(NMM(glm.vec3(0,0,-5)))
             #testBlock.visibleSides[Block.Side.Top] = False
             #instance_data = testBlock.get_instance_data()
-            testWorld = World()
+            self.world = World()
             #instance_data = testWorld.get_instance_data()
-            testWorld.update()
-            self.testWorldRenderer = WorldRenderer(testWorld, glm.vec3())
-
+            self.world.update()
+            self.worldRenderer = WorldRenderer(self.world, glm.vec3())
             #instance_data = testWorldRenderer.get_instance_data()
 
             #self.testBlockMesh = QuadCubeMesh(testQCs)
@@ -98,12 +100,16 @@ class HelloLayer(Layer):
             #self.testBlockShader = ShaderProgram("block", "block")
             #self.testBlockShader.use()
 
-            self.testWorldRenderer.worldBlockShader.use()
+            self.worldRenderer.worldBlockShader.use()
 
-            self.renderDistance = 4
+            self.renderDistance = self.worldRenderer.renderDistance
+            self.maxRenderDistance = _WORLD_CHUNK_AXIS_LENGTH
+            self.minRenderDistance = 1
+            self.renderDistanceRangeSize = self.maxRenderDistance - self.minRenderDistance + 1
             #self.testWorldRenderer._set_render_distance(self.renderDistance)
 
-
+            self.crosshairMesh = CrosshairMesh(glm.vec2(0.5))
+            self.wcCubeMesh = WireframeCubeMesh(glm.vec3())
 
             glClearColor(0.5, 0.3, 0.1, 1.0)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -117,6 +123,8 @@ class HelloLayer(Layer):
         self._Renderer.clear()
 
         if self.cursor_timer > 0: self.cursor_timer -= 1
+        if self.tab_timer > 0: self.tab_timer-=1
+        if self.chunk_shift_timer > 0: self.chunk_shift_timer-=1
         for boundCtrl in GetBoundControls():
             ctrlID = boundCtrl.GetID()
             if boundCtrl.GetInputState().value:
@@ -128,6 +136,25 @@ class HelloLayer(Layer):
                         self.cursor_timer = 10
                 elif ctrlID == Control.ID.Config.QUIT:
                     GetApplication().close()
+                elif ctrlID == Control.ID.Config.CYCLE_RENDER_DISTANCE:
+                    if not self.tab_timer:
+                        self.renderDistance = (self.renderDistance + 1 - self.minRenderDistance) % self.renderDistanceRangeSize + self.minRenderDistance
+                        self.worldRenderer._set_render_distance(self.renderDistance)
+                        print(self.worldRenderer)
+                        print(self.renderDistance + 1)
+                        self.tab_timer = 20
+                elif not self.chunk_shift_timer:
+                    if ctrlID == Control.ID.Config.CHUNK_WEST:
+                        self.worldRenderer._shift_rendered_chunks(glm.vec2(-1, 0))
+                    elif ctrlID == Control.ID.Config.CHUNK_SOUTH:
+                        self.worldRenderer._shift_rendered_chunks(glm.vec2(0, 1))
+                    elif ctrlID == Control.ID.Config.CHUNK_EAST:
+                        self.worldRenderer._shift_rendered_chunks(glm.vec2(1, 0))
+                    elif ctrlID == Control.ID.Config.CHUNK_NORTH:
+                        self.worldRenderer._shift_rendered_chunks(glm.vec2(0, -1))
+                    print(self.worldRenderer)
+                    self.chunk_shift_timer = 20
+
         if self.camera.process_mouse:
             inpStat.s_MouseDeltaX = inpStat.s_NextMousePosX - inpStat.s_MousePosX
             inpStat.s_MouseDeltaY = inpStat.s_MousePosY - inpStat.s_NextMousePosY
@@ -139,14 +166,14 @@ class HelloLayer(Layer):
         # self.blockShader.setMat4("uView", self.camera.GetViewMatrix())
         projection = self._Renderer.get_projection()
         view = self.camera.GetViewMatrix()
-        self.testWorldRenderer.worldBlockShader.setMat4("uProjection", projection)
-        self.testWorldRenderer.worldBlockShader.setMat4("uView", view)
         # defShader.setMat4("uModel", pentaModel)
         # pentaMesh.draw()
         # self.qcMesh.draw()
         # qcMeshB.draw()
         # wcMesh.draw()
-        self.testWorldRenderer.draw()
+        self.worldRenderer.draw(projection, view)
+        self.wcCubeMesh.draw(projection, view)
+        self.crosshairMesh.draw()
 
     def toggle_cam_control(self) -> bool:
         window = GetApplication().get_window()

@@ -4,7 +4,7 @@ import os.path
 from MineClone.Chunk import *
 from MineClone.Chunk import _BLOCKS_IN_CHUNK, _QUADS_IN_CHUNK
 
-_WORLD_CHUNK_AXIS_LENGTH = 1
+_WORLD_CHUNK_AXIS_LENGTH = 4
 _WORLD_CHUNK_RANGE = range(-_WORLD_CHUNK_AXIS_LENGTH, _WORLD_CHUNK_AXIS_LENGTH+1)
 _CHUNKS_IN_ROW = len(_WORLD_CHUNK_RANGE)
 _CHUNKS_IN_WORLD = _CHUNKS_IN_ROW * _CHUNKS_IN_ROW
@@ -36,7 +36,7 @@ class World:
         return self._get_chunk(x, z)
 
     def get_chunk_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Chunk:
-        x, z = [int(i) for i in (glm.vec2(worldBlockPos.xz) + _WORLD_CHUNK_AXIS_LENGTH) // _WORLD_CHUNK_AXIS_LENGTH]
+        x, z = [int(i) for i in (glm.vec2(worldBlockPos.xz) + _WORLD_CHUNK_AXIS_LENGTH)]
         return self._get_chunk(x, z)
 
     def get_block_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Block:

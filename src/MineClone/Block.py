@@ -13,9 +13,9 @@ class Block:
     ]
 
     class Side(Enum):
-        East = 0
+        West = 0
         South = auto()
-        West = auto()
+        East = auto()
         North = auto()
         Top = auto()
         Bottom = auto()
@@ -43,9 +43,9 @@ class Block:
     ])
 
     adjBlockOffsets: dict[Side, glm.vec3] = {
-        Side.East   : glm.vec3(-1, 0, 0),
+        Side.West   : glm.vec3(-1, 0, 0),
         Side.South  : glm.vec3( 0, 0, 1),
-        Side.West   : glm.vec3( 1, 0, 0),
+        Side.East   : glm.vec3( 1, 0, 0),
         Side.North  : glm.vec3( 0, 0,-1),
         Side.Top    : glm.vec3( 0, 1, 0),
         Side.Bottom : glm.vec3( 0,-1, 0)
@@ -57,9 +57,9 @@ class Block:
             self.worldBlockPos: glm.vec3 = None
             self.adjBlocks: dict[Block.Side, Block] = None
             self.visibleSides: dict[Block.Side, bool] = {
-                Block.Side.East: True,
-                Block.Side.South: True,
                 Block.Side.West: True,
+                Block.Side.South: True,
+                Block.Side.East: True,
                 Block.Side.North: True,
                 Block.Side.Top: True,
                 Block.Side.Bottom: True

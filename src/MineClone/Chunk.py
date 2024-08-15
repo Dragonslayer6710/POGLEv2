@@ -3,9 +3,9 @@ import copy
 from MineClone.Block import *
 from MineClone.Block import _QUADS_IN_BLOCK
 
-_CHUNK_WIDTH = 8
+_CHUNK_WIDTH = 4
 _CHUNK_WIDTH_RANGE = range(_CHUNK_WIDTH)
-_CHUNK_HEIGHT = 8
+_CHUNK_HEIGHT = 4
 _CHUNK_HEIGHT_RANGE = range(_CHUNK_HEIGHT)
 
 _BLOCKS_IN_CHUNK = _CHUNK_WIDTH * _CHUNK_WIDTH * _CHUNK_HEIGHT
@@ -17,11 +17,15 @@ class Chunk:
         Null = 0
         Valid = auto()
 
-    class Side(Enum):
-        East = 0
+    class Cardinal(Enum):
+        West = 0
+        SouthWest = auto()
         South = auto()
-        West = auto()
+        SouthEast = auto()
+        East = auto()
+        NorthEast = auto()
         North = auto()
+        NorthWest = auto()
 
     chunkID: ID = ID.Null
 
@@ -35,48 +39,35 @@ class Chunk:
 
     block_instances: list[np.ndarray] = [None] * _CHUNK_WIDTH * _CHUNK_HEIGHT * _CHUNK_WIDTH
 
-    adjChunkOffsets: dict[Side, glm.vec2] = {
-        Side.East: glm.vec2(-1, 0),
-        Side.South: glm.vec2(0, -1),
-        Side.West: glm.vec2(1, 0),
-        Side.North: glm.vec2(0, 1),
+    neighbourOffsets: dict[Cardinal, glm.vec2] = {
+        Cardinal.West: glm.vec2(-1, 0),
+        Cardinal.SouthWest: glm.vec2(-1, -1),
+        Cardinal.South: glm.vec2(0, -1),
+        Cardinal.SouthEast: glm.vec2(-1, 1),
+        Cardinal.East: glm.vec2(1, 0),
+        Cardinal.NorthEast: glm.vec2(1, 1),
+        Cardinal.North: glm.vec2(0, 1),
+        Cardinal.NorthWest: glm.vec2(1, -1),
     }
 
-    diagChunkOffsets: list[dict[Side, glm.vec2]] = [
-        {Side.East: adjChunkOffsets[Side.East], Side.West: adjChunkOffsets[Side.West]},
-        {Side.South: adjChunkOffsets[Side.South], Side.North: adjChunkOffsets[Side.North]}
-    ]
-    _diagSet = False
-
     def __init__(self, worldChunkPos: glm.vec2):
-        if not Chunk._diagSet:
-            Chunk.diagChunkOffsets: dict[Chunk.Side, dict[Chunk.Side, glm.vec2]] = {
-                sideZ: {sideX: offsetX + offsetZ for sideX, offsetX in Chunk.diagChunkOffsets[0].items()} for
-                sideZ, offsetZ
-                in Chunk.diagChunkOffsets[1].items()}
-            Chunk._diagSet = True
-
         if None != worldChunkPos:
             self.blocks = copy.deepcopy(Chunk.blocks)
             self.block_instances = copy.deepcopy(Chunk.block_instances)
             self.chunkID = Chunk.ID.Valid
             self.worldChunkPos: glm.vec2 = worldChunkPos
+            self._neighbourPos: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.worldChunkPos for k, v in
+                                                                  Chunk.neighbourOffsets.items()}
             self.worldChunkBlockPos: glm.vec3 = glm.vec3(worldChunkPos[0], 0, worldChunkPos[1]) * _CHUNK_WIDTH
         self.is_chunk: bool = self.chunkID == Chunk.ID.Valid
 
     def init(self, world, worldChunkID: int):
         from MineClone.World import World
         self.world: World = world
-        self.adjChunks: dict[Chunk.Side, Chunk] = {
-            side: self.world.get_chunk_from_world_chunk_pos(self.worldChunkPos + offset) for side, offset in
-            self.adjChunkOffsets.items()
-        }
-        self.diagChunks: dict[Chunk.Side, dict[Chunk.Side, Chunk]] = {
-            sideZ: {sideX: self.world.get_chunk_from_world_chunk_pos(self.worldChunkPos + offset) for sideX, offset in
-                    sideXDict.items()} for sideZ, sideXDict in self.diagChunkOffsets.items()}
         self.worldChunkID: int = worldChunkID
         self.is_chunk = self.chunkID == Chunk.ID.Valid
-
+        self.neighbourChunks: dict[Chunk.Cardinal, Chunk] = {k: self.world.get_chunk_from_world_chunk_pos(v) for k, v in
+                                                             self._neighbourPos.items()}
         for x in _CHUNK_WIDTH_RANGE:
             for y in _CHUNK_HEIGHT_RANGE:
                 for z in _CHUNK_WIDTH_RANGE:
@@ -103,15 +94,15 @@ class Chunk:
         if xOutOfRange or zOutOfRange:
             if xOutOfRange:
                 if chunkBlockX < 0:
-                    side: Chunk.Side = Chunk.Side.East
+                    cardinalDir: Chunk.Cardinal = Chunk.Cardinal.West
                 else:
-                    side: Chunk.Side = Chunk.Side.West
+                    cardinalDir: Chunk.Cardinal = Chunk.Cardinal.East
             if zOutOfRange:
                 if chunkBlockZ < 0:
-                    side: Chunk.Side = Chunk.Side.South
+                    cardinalDir: Chunk.Cardinal = Chunk.Cardinal.South
                 else:
-                    side: Chunk.Side = Chunk.Side.North
-            chunk: Chunk = self.adjChunks[side]
+                    cardinalDir: Chunk.Cardinal = Chunk.Cardinal.North
+            chunk: Chunk = self.neighbourChunks[cardinalDir]
             if CHUNK_NULL == chunk:
                 return BLOCK_NULL
             else:
@@ -151,43 +142,47 @@ class Chunk:
             return None
         return np.concatenate(block_instances, dtype=block_instances[0].dtype)
 
-    def get_chunks_to_render(self, renderedChunks: list[list], renderDistanceFromHere: int, listPos: glm.vec2 = None,
-                             visitedChunks: list = []):
-        visitedChunks.append(self.worldChunkID)
-        halfPoint = renderDistanceFromHere // 2
-        if not listPos:
-            listPos = glm.vec2(halfPoint, halfPoint)
-        minPos: glm.vec2 = listPos - halfPoint
-        maxPos: glm.vec2 = listPos + halfPoint
-        renderedChunks[int(listPos[0])][int(listPos[1])] = self
-        if renderDistanceFromHere:
-            for side, adjChunk in self.adjChunks.items():
-                if adjChunk.is_chunk:
-                    if adjChunk.worldChunkID not in visitedChunks:
-                        shiftedPos = listPos + self.adjChunkOffsets[side]
-                        if minPos[0] <= shiftedPos[0] <= maxPos[0] and minPos[1] <= shiftedPos[1] <= maxPos[1]:
-                            adjChunk.get_chunks_to_render(
-                                renderedChunks,
-                                renderDistanceFromHere - 1,
-                                shiftedPos,
-                                visitedChunks
-                            )
-                if side in self.diagChunks.keys():
-                    for sideX, diagChunk in self.diagChunks[side].items():
-                        if diagChunk.is_chunk:
-                            if diagChunk.worldChunkID not in visitedChunks:
-                                shiftedPos = listPos + self.diagChunkOffsets[side][sideX]
-                                if minPos[0] <= shiftedPos[0] <= maxPos[0] and minPos[1] <= shiftedPos[1] <= maxPos[1]:
-                                    diagChunk.get_chunks_to_render(
-                                        renderedChunks,
-                                        renderDistanceFromHere - 1,
-                                        shiftedPos,
-                                        visitedChunks
-                                    )
-                                else:
-                                    print()
+    def get_chunks_to_render(self, renderedChunks: list[list], chunksLeftFromHere: int,
+                             listPos: glm.vec2 = None, visitedChunks=None):
+        renderDistanceFromHere = (chunksLeftFromHere - 1) // 2
+        if visitedChunks is None:
+            visitedChunks = []
+            listPos = glm.vec2(renderDistanceFromHere, renderDistanceFromHere)
+            Chunk._num_chunks_to_visit = len(renderedChunks)
+            Chunk._num_chunks_to_visit *= Chunk._num_chunks_to_visit
+            Chunk._currentDepth = 0
+            Chunk._chunksToRender = chunksLeftFromHere - 1
         else:
-            print()
+            Chunk._currentDepth += 1
+        minPos: glm.vec2 = listPos - renderDistanceFromHere
+        maxPos: glm.vec2 = listPos + renderDistanceFromHere
+        limits = [minPos, maxPos]
+        for i in range(2):
+            for limit in limits:
+                if i:
+                    limit[0] = min(limit[0], Chunk._chunksToRender)
+                    limit[1] = min(limit[1], Chunk._chunksToRender)
+                else:
+                    limit[0] = max(limit[0], 0)
+                    limit[1] = max(limit[1], 0)
+
+        visitedChunks.append(self.worldChunkID)
+        renderedChunks[int(listPos[0])][int(listPos[1])] = self
+        self._num_chunks_to_visit -= 1
+        if self._num_chunks_to_visit:
+            if chunksLeftFromHere:
+                for cardinalDir, neighbour in self.neighbourChunks.items():
+                    if neighbour.is_chunk:
+                        if neighbour.worldChunkID not in visitedChunks:
+                            shiftedPos = listPos + self.neighbourOffsets[cardinalDir]
+                            if minPos[0] <= shiftedPos[0] <= maxPos[0] and minPos[1] <= shiftedPos[1] <= maxPos[1]:
+                                neighbour.get_chunks_to_render(renderedChunks, chunksLeftFromHere, shiftedPos, visitedChunks)
+
+        if Chunk._currentDepth:
+            Chunk._currentDepth -= 1
+        else:
+            del Chunk._currentDepth
+            del Chunk._num_chunks_to_visit
 
 
 CHUNK_NULL = Chunk(None)

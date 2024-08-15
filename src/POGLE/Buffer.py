@@ -21,7 +21,14 @@ class Buffer:
 
     def __del__(self):
         if glIsBuffer(self.ID):
-            glDeleteBuffers(1, self.ID)
+            try:
+                # glDeleteBuffers expects a list or tuple
+                glDeleteBuffers(1, [self.ID])
+            except Exception as e:
+                print(f"Exception during buffer deletion: {e}")
+            finally:
+                self.ID = 0  # Avoid double deletion and mark as deleted
+
 
 class VertexBuffer(Buffer):
     def __init__(self):
@@ -60,9 +67,15 @@ class VertexArray:
 
         self.unbind()
 
+
     def __del__(self):
-        if glIsVertexArray(self.ID):
-            glDeleteVertexArrays(1, self.ID)
+        if self.ID != 0:
+            try:
+                glDeleteVertexArrays(1, [self.ID])
+            except Exception as e:
+                print(f"Exception during VAO deletion: {e}")
+            finally:
+                self.ID = 0  # Avoid double deletion
 
     def bind(self):
         glBindVertexArray(self.ID)

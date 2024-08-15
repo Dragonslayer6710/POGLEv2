@@ -3,15 +3,16 @@ from POGLE.Geometry.Shape2D import *
 
 class WireframeCube(Shape):
     positions = [
-        glm.vec3(-1.0, 1.0, 1.0),  # Front Top Left
-        glm.vec3(1.0, 1.0, 1.0),  # Front Top Right
-        glm.vec3(1.0, -1.0, 1.0),  # Front Bottom Right
-        glm.vec3(-1.0, -1.0, 1.0),  # Front Bottom Left
-        glm.vec3(1.0, 1.0, -1.0),  # Back Top Right
-        glm.vec3(-1.0, 1.0, -1.0),  # Back Top Left
-        glm.vec3(-1.0, -1.0, -1.0),  # Back Bottom Left
-        glm.vec3(1.0, -1.0, -1.0),  # Back Bottom Right
+        glm.vec3(-0.5,  0.5,  0.5),  # Front Top Left
+        glm.vec3( 0.5,  0.5,  0.5),  # Front Top Right
+        glm.vec3( 0.5, -0.5,  0.5),  # Front Bottom Right
+        glm.vec3(-0.5, -0.5,  0.5),  # Front Bottom Left
+        glm.vec3( 0.5,  0.5, -0.5),  # Back Top Right
+        glm.vec3(-0.5,  0.5, -0.5),  # Back Top Left
+        glm.vec3(-0.5, -0.5, -0.5),  # Back Bottom Left
+        glm.vec3( 0.5, -0.5, -0.5),  # Back Bottom Right
     ]
+
     indices = [
         # Front Quad
         0, 1, 1, 2, 2, 3, 3, 0,
@@ -22,6 +23,11 @@ class WireframeCube(Shape):
         # Right Side Lines
         1, 4, 7, 2,
     ]
+
+    def __init__(self, position: glm.vec3, color: glm.vec3, alpha: float):
+
+        super().__init__(instanceElements=[[color], [alpha], [NMM(position)]],
+                         instanceAttributes=[FloatVA.Vec3(1), FloatVA.Single(1), FloatVA.Mat4()])
 
 
 class QuadCube(Quad):
@@ -139,5 +145,3 @@ class Shapes:
     # 2D
     Quad = Quad()
     Pentagon = Pentagon()
-    # 3D
-    WireframeCube = WireframeCube()

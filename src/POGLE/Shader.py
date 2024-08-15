@@ -27,7 +27,13 @@ class Shader:
 
     def __del__(self):
         if glIsShader(self.ID):
-            glDeleteShader(1, self.ID)
+            try:
+                # glDeleteShader expects a single integer, not a list
+                glDeleteShader(self.ID)
+            except Exception as e:
+                print(f"Exception during shader deletion: {e}")
+            finally:
+                self.ID = 0  # Avoid double deletion and mark as deleted
 
 class VertexShader(Shader):
     def __init__(self, shaderName: str = "default"):
@@ -58,7 +64,13 @@ class ShaderProgram:
 
     def __del__(self):
         if glIsProgram(self.ID):
-            glDeleteProgram(1, self.ID)
+            try:
+                # glDeleteProgram expects a single integer, not a list
+                glDeleteProgram(self.ID)
+            except Exception as e:
+                print(f"Exception during shader program deletion: {e}")
+            finally:
+                self.ID = 0  # Avoid double deletion and mark as deleted
 
     def use(self):
         glUseProgram(self.ID)
