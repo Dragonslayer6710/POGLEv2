@@ -2,11 +2,18 @@ import copy
 import os.path
 
 from MineClone.Chunk import *
-from MineClone.Chunk import _BLOCKS_IN_CHUNK, _QUADS_IN_CHUNK
+from MineClone.Chunk import _BLOCKS_IN_CHUNK, _QUADS_IN_CHUNK, _CHUNK_HEIGHT, _CHUNK_WIDTH
 
 _WORLD_CHUNK_AXIS_LENGTH = 4
 _WORLD_CHUNK_RANGE = range(-_WORLD_CHUNK_AXIS_LENGTH, _WORLD_CHUNK_AXIS_LENGTH+1)
 _CHUNKS_IN_ROW = len(_WORLD_CHUNK_RANGE)
+
+_BLOCKS_IN_ROW = _CHUNKS_IN_ROW * _CHUNK_WIDTH
+_WORLD_SIZE = glm.vec3(_BLOCKS_IN_ROW, _CHUNK_HEIGHT, _BLOCKS_IN_ROW)
+_WORLD_SIZE_HALF = _WORLD_SIZE / 2
+
+_WORLD_MID_POINT = glm.vec3(0, _WORLD_SIZE_HALF.y, 0)
+
 _CHUNKS_IN_WORLD = _CHUNKS_IN_ROW * _CHUNKS_IN_ROW
 
 _BLOCKS_IN_WORLD = _BLOCKS_IN_CHUNK * _CHUNKS_IN_WORLD
@@ -16,14 +23,21 @@ class World:
     chunks: list[list[Chunk]] = [[Chunk(glm.vec2(x, z)) for z in _WORLD_CHUNK_RANGE] for x in _WORLD_CHUNK_RANGE]
     chunk_instances: list[np.ndarray] = [None] * len(_WORLD_CHUNK_RANGE) * len(_WORLD_CHUNK_RANGE)
     def __init__(self):
+        self.aabb: AABB = AABB(_WORLD_MID_POINT, _WORLD_SIZE_HALF, self)
         self.chunks = copy.deepcopy(World.chunks)
         self.worldWidth = len(self.chunks)
+
+        objects: list[Octree.Object] = []
         for chunkX in range(self.worldWidth):
             for chunkZ in range(self.worldWidth):
                 chunk = self.chunks[chunkX][chunkZ]
                 worldChunkID = chunkX * self.worldWidth + chunkZ
                 chunk.init(self, worldChunkID)
+                objects.append(QuadTree.Object(chunk.aabb, chunk))
                 self.chunk_instances[chunk.worldChunkID] = chunk.get_instance_data()
+        self.quadtree: QuadTree = QuadTree(self.aabb, objects)
+        colliders: list[Collider] = self.quadtree.queryAABB(AABB(_WORLD_MID_POINT, glm.vec3(0.5,1.0,0.5)))
+        print()
 
 
     def _get_chunk(self, x: int, z: int) -> Chunk:

@@ -6,6 +6,8 @@ from MineClone.Block import _QUADS_IN_BLOCK
 _CHUNK_WIDTH = 4
 _CHUNK_WIDTH_RANGE = range(_CHUNK_WIDTH)
 _CHUNK_HEIGHT = 4
+_CHUNK_SIZE = glm.vec3(_CHUNK_WIDTH, _CHUNK_HEIGHT, _CHUNK_WIDTH)
+_CHUNK_SIZE_HALF = _CHUNK_SIZE / 2
 _CHUNK_HEIGHT_RANGE = range(_CHUNK_HEIGHT)
 
 _BLOCKS_IN_CHUNK = _CHUNK_WIDTH * _CHUNK_WIDTH * _CHUNK_HEIGHT
@@ -59,6 +61,8 @@ class Chunk:
             self._neighbourPos: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.worldChunkPos for k, v in
                                                                   Chunk.neighbourOffsets.items()}
             self.worldChunkBlockPos: glm.vec3 = glm.vec3(worldChunkPos[0], 0, worldChunkPos[1]) * _CHUNK_WIDTH
+            self.aabb: AABB = AABB(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE_HALF, self)
+
         self.is_chunk: bool = self.chunkID == Chunk.ID.Valid
 
     def init(self, world, worldChunkID: int):
@@ -68,6 +72,7 @@ class Chunk:
         self.is_chunk = self.chunkID == Chunk.ID.Valid
         self.neighbourChunks: dict[Chunk.Cardinal, Chunk] = {k: self.world.get_chunk_from_world_chunk_pos(v) for k, v in
                                                              self._neighbourPos.items()}
+        objects: list[Octree.Object] = []
         for x in _CHUNK_WIDTH_RANGE:
             for y in _CHUNK_HEIGHT_RANGE:
                 for z in _CHUNK_WIDTH_RANGE:
@@ -75,7 +80,9 @@ class Chunk:
                     chunkBlockID = x * _CHUNK_WIDTH * _CHUNK_HEIGHT + y * _CHUNK_WIDTH + z
                     blockID = Block.ID(random.randrange(0, len(Block.ID)))
                     block.init(self, chunkBlockID, blockID)
+                    objects.append(Octree.Object(block.aabb, block))
                     self.block_instances[block.chunkBlockID] = block.get_instance_data()
+        self.octree: Octree = Octree(self.aabb, objects)
 
     def get_world_pos(self, blockPos: glm.vec3) -> glm.vec3:
         return self.worldChunkBlockPos + blockPos  # Chunk Pos in world plus chunk rel coordinate

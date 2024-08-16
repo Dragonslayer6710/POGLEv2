@@ -1,4 +1,6 @@
 from POGLE.Core.Application import *
+from POGLE.Physics.Octree import *
+
 import pickle
 _QUADS_IN_BLOCK = 6
 class Block:
@@ -55,6 +57,7 @@ class Block:
         if None != chunkBlockPos:
             self.chunkBlockPos: glm.vec3 = chunkBlockPos
             self.worldBlockPos: glm.vec3 = None
+            self.aabb: AABB = None
             self.adjBlocks: dict[Block.Side, Block] = None
             self.visibleSides: dict[Block.Side, bool] = {
                 Block.Side.West: True,
@@ -73,6 +76,7 @@ class Block:
         self.chunk: Chunk = chunk
         self.chunkBlockID = chunkBlockID
         self.worldBlockPos = self.chunk.get_world_pos(self.chunkBlockPos)
+        self.aabb = AABB(self.worldBlockPos, obj=self)
         self.blockID: Block.ID = id
         self.is_block = self.blockID != Block.ID.Null
         self.is_transparent = self.blockID in Block.transparentBlocks
