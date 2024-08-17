@@ -11,6 +11,7 @@ FOV        =  45.0
 
 _Move = Control.ID.Move
 
+CAMERA_INITIAL_FRONT = glm.vec3(0.0, 0.0, -1.0)
 class Camera:
     def __init__(self, posX = 0.0, posY = 0.0, posZ = 0.0, upX = 0.0, upY = 1.0, upZ = 0.0, yaw = YAW, pitch = PITCH):
         self.Position = glm.vec3(posX, posY, posZ)
@@ -18,7 +19,7 @@ class Camera:
         self.Yaw = yaw
         self.Pitch = pitch
 
-        self.Front = glm.vec3(0.0, 0.0, -1.0)
+        self.Front = CAMERA_INITIAL_FRONT
         self.Up = glm.vec3()
         self.Right = glm.vec3()
         self.MovementSpeed = SPEED
@@ -31,20 +32,6 @@ class Camera:
     def GetViewMatrix(self) -> glm.mat4:
         return glm.lookAt(self.Position, self.Position + self.Front, self.Up)
 
-    def ProcessKeyboard(self, direction: Control.ID.Move, deltaTime: float) -> None:
-        velocity = self.MovementSpeed * deltaTime
-        if direction == _Move.FORWARD:
-            self.Position += self.Front * velocity
-        elif direction == _Move.BACKWARD:
-            self.Position -= self.Front * velocity
-        elif direction == _Move.LEFT:
-            self.Position -= self.Right * velocity
-        elif direction == _Move.RIGHT:
-            self.Position += self.Right * velocity
-        elif direction == _Move.UP:
-            self.Position += self.WorldUp * velocity
-        elif direction == _Move.DOWN:
-            self.Position -= self.WorldUp * velocity
     def ProcessMouseMovement(self, xoffset: float, yoffset: float, constrainPitch: bool = True) -> None:
         xoffset *= self.MouseSensitivity
         yoffset *= self.MouseSensitivity

@@ -1,8 +1,8 @@
 from MineClone.World import *
-
+from MineClone.World import _WORLD_SIZE
 
 class WorldRenderer:
-    def __init__(self, world: World, originPos: glm.vec3, renderDistance: int = 1):
+    def __init__(self, world: World, originPos: glm.vec3 = glm.vec3(0, _WORLD_SIZE.y, 0), renderDistance: int = 1):
         self.world: World = world
         self.originPos: glm.vec3 = originPos
         self.originChunk: Chunk = None
@@ -16,8 +16,6 @@ class WorldRenderer:
 
         self._set_origin_chunk()
         self._set_render_distance(renderDistance)
-
-
 
     def _get_origin_chunk(self) -> Chunk:
         return self.world.get_chunk_from_world_block_pos(self.originPos)
@@ -64,12 +62,14 @@ class WorldRenderer:
                 # Insert array of chunks to the West of those remaining in the array to the major array
                 self.renderedChunks.insert(
                     0,
-                    [chunk.neighbourChunks[Chunk.Cardinal.West] if chunk.is_chunk else CHUNK_NULL for chunk in self.renderedChunks[0]]
+                    [chunk.neighbourChunks[Chunk.Cardinal.West] if chunk.is_chunk else CHUNK_NULL for chunk in
+                     self.renderedChunks[0]]
                 )
             else:
                 # Append array of chunks to the East of those remaining in the array to the major array
                 self.renderedChunks.append(
-                    [chunk.neighbourChunks[Chunk.Cardinal.East] if chunk.is_chunk else CHUNK_NULL for chunk in self.renderedChunks[-1]]
+                    [chunk.neighbourChunks[Chunk.Cardinal.East] if chunk.is_chunk else CHUNK_NULL for chunk in
+                     self.renderedChunks[-1]]
                 )
         if isShiftZ:
             if isShiftSouth:
@@ -93,7 +93,6 @@ class WorldRenderer:
         self.renderDistance = renderDistance
         self._chunksInRow = 2 * renderDistance + 1
         self._build_rendered_chunks()
-
 
     def _build_rendered_chunks(self):
         self.renderedChunks = [[CHUNK_NULL for i in range(self._chunksInRow)] for j in range(self._chunksInRow)]

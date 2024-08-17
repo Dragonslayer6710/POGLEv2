@@ -30,20 +30,44 @@ class AABB:
 
 
 class Collider:
-    def __init__(self, obj):
-        self.obj = obj
     def sweepAABB(self, box: AABB, delta: glm.vec3) -> Sweep:
         pass
 
 
 class AABB(Collider):
-    def __init__(self, pos: glm.vec3, half: glm.vec3 = glm.vec3(0.5), obj=None):
-        super().__init__(obj)
+    __create_key = object()
+
+    @classmethod
+    def _new(cls, pos: glm.vec3, size: glm.vec3):
+        return AABB(cls.__create_key, pos, size)
+
+    def __init__(self, create_key, pos: glm.vec3, size: glm.vec3):
+        assert (create_key == AABB.__create_key), \
+            "AABB objects must be created using AABB._new"
         self.pos: glm.vec3 = pos
-        self.half: glm.vec3 = half
-        self.size: glm.vec3 = half * 2
-        self.min: glm.vec3 = pos - half
-        self.max: glm.vec3 = pos + half
+        self.size: glm.vec3 = size
+
+    @property
+    def half(self) -> glm.vec3:
+        return self.size / 2
+
+    @property
+    def min(self) -> glm.vec3:
+        return self.pos - self.half
+
+    @property
+    def max(self) -> glm.vec3:
+        return self.pos + self.half
+
+    @classmethod
+    def from_min_max(cls, min: glm.vec3, max: glm.vec3):
+        size: glm.vec3 = max - min
+        pos: glm.vec3 = min + size / 2
+        return cls._new(pos, size)
+
+    @classmethod
+    def from_pos_size(cls, pos: glm.vec3, size: glm.vec3 = glm.vec3(1.0)):
+        return cls._new(pos, size)
 
     def does_overlap(self, overlap: glm.vec3) -> bool:
         return overlap.x > 0 and overlap.y > 0 and overlap.z > 0
@@ -175,7 +199,8 @@ class AABB(Collider):
             sweep.time = clamp(sweep.hit.time - EPSILON, 0, 1)
             sweep.pos = box.pos + delta * sweep.time
             direction = glm.normalize(glm.vec3(delta))
-            sweep.hit.pos = glm.clamp(sweep.hit.pos + direction * box.half, self.pos - self.half, self.pos + self.half)
+            sweep.hit.pos = glm.clamp(sweep.hit.pos + direction * box.half, self.pos - self.half,
+                                      self.pos + self.half)
         else:
             sweep.pos = box.pos + delta
             sweep.time = 1
@@ -199,3 +224,62 @@ class AABB(Collider):
                 self.max.x >= box.max.x and
                 self.max.y >= box.max.y and
                 self.max.z >= box.max.z)
+
+    def __str__(self):
+        return f"AABB(pos: {self.pos}, size: {self.size})"
+
+
+_collider = Collider
+
+
+class Physical:
+    _collider: Collider | None
+
+    def __init__(self, collider: type(_collider) = None):
+        self._collider = collider
+
+    def _set_collider(self, collider: type(_collider)):
+        self._collider: type(collider) = collider
+
+
+class PhysicalBox(Physical):
+    _collider: AABB | None
+
+    def __init__(self, bounds: AABB | None = None):
+        super().__init__(bounds)
+
+    @property
+    def bounds(self):
+        return self._collider
+
+    @bounds.setter
+    def bounds(self, newBounds: AABB):
+        super()._set_collider(newBounds)
+
+    @property
+    def pos(self) -> glm.vec3:
+        return self.bounds.pos
+
+    @pos.setter
+    def pos(self, newPos: glm.vec3):
+        self.bounds.pos = newPos
+
+    @property
+    def size(self) -> glm.vec3:
+        return self.bounds.size
+
+    @size.setter
+    def size(self, newSize: glm.vec3):
+        self.bounds.size = newSize
+
+    @property
+    def half(self) -> glm.vec3:
+        return self.bounds.half
+
+    @property
+    def min(self) -> glm.vec3:
+        return self.bounds.min
+
+    @property
+    def max(self) -> glm.vec3:
+        return self.bounds.max

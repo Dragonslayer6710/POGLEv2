@@ -1,9 +1,9 @@
 from POGLE.Core.Application import *
-from POGLE.Physics.Octree import *
+from POGLE.Physics.SpatialTree import *
 
 import pickle
 _QUADS_IN_BLOCK = 6
-class Block:
+class Block(PhysicalBox):
     class ID(Enum):
         Null = 0
         Grass = auto()
@@ -54,10 +54,9 @@ class Block:
     }
 
     def __init__(self, chunkBlockPos: glm.vec3, id: ID = ID.Null):
+        super().__init__()
         if None != chunkBlockPos:
             self.chunkBlockPos: glm.vec3 = chunkBlockPos
-            self.worldBlockPos: glm.vec3 = None
-            self.aabb: AABB = None
             self.adjBlocks: dict[Block.Side, Block] = None
             self.visibleSides: dict[Block.Side, bool] = {
                 Block.Side.West: True,
@@ -75,20 +74,19 @@ class Block:
         from MineClone.Chunk import Chunk
         self.chunk: Chunk = chunk
         self.chunkBlockID = chunkBlockID
-        self.worldBlockPos = self.chunk.get_world_pos(self.chunkBlockPos)
-        self.aabb = AABB(self.worldBlockPos, obj=self)
+        self.bounds = AABB.from_pos_size(self.chunk.get_world_pos(self.chunkBlockPos))
         self.blockID: Block.ID = id
         self.is_block = self.blockID != Block.ID.Null
         self.is_transparent = self.blockID in Block.transparentBlocks
         if self.is_block:
-            texQuadCube = TexQuadCube(NMM(self.worldBlockPos), glm.vec2(), glm.vec2())
+            texQuadCube = TexQuadCube(NMM(self.pos), glm.vec2(), glm.vec2())
             if None == Block._TextureAtlas:
                 Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
                 Block.vertices = texQuadCube.vertices
             self.face_instances: list[np.ndarray] = split_array(texQuadCube.instances.data, 6)
             self.update_face_textures()
             self.adjBlocks: dict[Block.Side, Block] = {
-                side: self.chunk.get_block(self.worldBlockPos + offset) for side, offset in self.adjBlockOffsets.items()
+                side: self.chunk.get_block(self.pos + offset) for side, offset in self.adjBlockOffsets.items()
             }
 
     def set(self, id: ID):

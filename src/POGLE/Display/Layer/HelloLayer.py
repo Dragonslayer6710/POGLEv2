@@ -1,15 +1,12 @@
 import random
 
 from POGLE.Core.Application import *
-from MineClone.WorldRenderer import *
+from MineClone.MineClone import *
 from MineClone.World import _WORLD_CHUNK_AXIS_LENGTH
+game = None
 class HelloLayer(Layer):
-
     def __init__(self, renderer: Renderer):
         super().__init__("Hello Layer!")
-        # camera
-        self.camera = Camera()
-
         self._Renderer = renderer
 
     def OnAttach(self):
@@ -47,6 +44,7 @@ class HelloLayer(Layer):
 
     import random
     def OnUpdate(self, deltaTime: float):
+        global game
         if self.initUpdate:
             colors = [
                 Color.BLACK,
@@ -89,10 +87,8 @@ class HelloLayer(Layer):
             #testBlock = Block(NMM(glm.vec3(0,0,-5)))
             #testBlock.visibleSides[Block.Side.Top] = False
             #instance_data = testBlock.get_instance_data()
-            self.world = World()
-            #instance_data = testWorld.get_instance_data()
-            self.world.update()
-            self.worldRenderer = WorldRenderer(self.world, glm.vec3())
+            game = Game()
+            game.worldRenderer = game.worldRenderer
             #instance_data = testWorldRenderer.get_instance_data()
 
             #self.testBlockMesh = QuadCubeMesh(testQCs)
@@ -100,9 +96,9 @@ class HelloLayer(Layer):
             #self.testBlockShader = ShaderProgram("block", "block")
             #self.testBlockShader.use()
 
-            self.worldRenderer.worldBlockShader.use()
+            game.worldRenderer.worldBlockShader.use()
 
-            self.renderDistance = self.worldRenderer.renderDistance
+            self.renderDistance = game.worldRenderer.renderDistance
             self.maxRenderDistance = _WORLD_CHUNK_AXIS_LENGTH
             self.minRenderDistance = 1
             self.renderDistanceRangeSize = self.maxRenderDistance - self.minRenderDistance + 1
@@ -129,49 +125,49 @@ class HelloLayer(Layer):
             ctrlID = boundCtrl.GetID()
             if boundCtrl.GetInputState().value:
                 if ctrlID in Control.ID.MoveCtrls:
-                    self.camera.ProcessKeyboard(ctrlID, deltaTime)
+                    game.player.move(ctrlID, deltaTime)
                 elif ctrlID == Control.ID.Config.CAM_CTRL_TGL:
                     if not self.cursor_timer:
-                        self.camera.look_enabled(self.toggle_cam_control())
+                        game.playerCam.look_enabled(self.toggle_cam_control())
                         self.cursor_timer = 10
                 elif ctrlID == Control.ID.Config.QUIT:
                     GetApplication().close()
                 elif ctrlID == Control.ID.Config.CYCLE_RENDER_DISTANCE:
                     if not self.tab_timer:
                         self.renderDistance = (self.renderDistance + 1 - self.minRenderDistance) % self.renderDistanceRangeSize + self.minRenderDistance
-                        self.worldRenderer._set_render_distance(self.renderDistance)
-                        print(self.worldRenderer)
+                        game.worldRenderer._set_render_distance(self.renderDistance)
+                        print(game.worldRenderer)
                         print(self.renderDistance + 1)
                         self.tab_timer = 20
                 elif not self.chunk_shift_timer:
                     if ctrlID == Control.ID.Config.CHUNK_WEST:
-                        self.worldRenderer._shift_rendered_chunks(glm.vec2(-1, 0))
+                        game.worldRenderer._shift_rendered_chunks(glm.vec2(-1, 0))
                     elif ctrlID == Control.ID.Config.CHUNK_SOUTH:
-                        self.worldRenderer._shift_rendered_chunks(glm.vec2(0, 1))
+                        game.worldRenderer._shift_rendered_chunks(glm.vec2(0, 1))
                     elif ctrlID == Control.ID.Config.CHUNK_EAST:
-                        self.worldRenderer._shift_rendered_chunks(glm.vec2(1, 0))
+                        game.worldRenderer._shift_rendered_chunks(glm.vec2(1, 0))
                     elif ctrlID == Control.ID.Config.CHUNK_NORTH:
-                        self.worldRenderer._shift_rendered_chunks(glm.vec2(0, -1))
-                    print(self.worldRenderer)
+                        game.worldRenderer._shift_rendered_chunks(glm.vec2(0, -1))
+                    print(game.worldRenderer)
                     self.chunk_shift_timer = 20
 
-        if self.camera.process_mouse:
+        if game.playerCam.process_mouse:
             inpStat.s_MouseDeltaX = inpStat.s_NextMousePosX - inpStat.s_MousePosX
             inpStat.s_MouseDeltaY = inpStat.s_MousePosY - inpStat.s_NextMousePosY
             if bool(inpStat.s_MouseDeltaX) | bool(inpStat.s_MouseDeltaY) != 0:
-                self.camera.ProcessMouseMovement(inpStat.s_MouseDeltaX, inpStat.s_MouseDeltaY)
+                game.playerCam.ProcessMouseMovement(inpStat.s_MouseDeltaX, inpStat.s_MouseDeltaY)
                 inpStat.s_MousePosX = inpStat.s_NextMousePosX
                 inpStat.s_MousePosY = inpStat.s_NextMousePosY
         # self.blockShader.setMat4("uProjection", projection)
-        # self.blockShader.setMat4("uView", self.camera.GetViewMatrix())
+        # self.blockShader.setMat4("uView", game.playerCam.GetViewMatrix())
         projection = self._Renderer.get_projection()
-        view = self.camera.GetViewMatrix()
+        view = game.playerCam.GetViewMatrix()
         # defShader.setMat4("uModel", pentaModel)
         # pentaMesh.draw()
         # self.qcMesh.draw()
         # qcMeshB.draw()
         # wcMesh.draw()
-        self.worldRenderer.draw(projection, view)
+        game.worldRenderer.draw(projection, view)
         self.wcCubeMesh.draw(projection, view)
         self.crosshairMesh.draw()
 
