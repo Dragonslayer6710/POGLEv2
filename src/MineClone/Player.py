@@ -25,7 +25,7 @@ _GRAVITY: float = -9.8
 _2X_FABS_GRAVITY: float = math.fabs(_GRAVITY)
 _TERMINAL_VELOCITY: float = -math.sqrt(_2X_FABS_GRAVITY)
 
-_JUMP_HEIGHT: float = 1.5
+_JUMP_HEIGHT: float = 2
 _JUMP_FORCE: float = math.sqrt(_2X_FABS_GRAVITY * _JUMP_HEIGHT)
 class Player(PhysicalBox):
 
@@ -56,7 +56,7 @@ class Player(PhysicalBox):
 
     @property
     def camOffset(self) -> glm.vec3:
-        return self.camera.Front * _PLAYER_CAMERA_DISTANCE_FROM_HEAD + _PLAYER_VERTICAL_OFFSET_FEET_TO_CAMERA
+        return self.camera.Front + _PLAYER_VERTICAL_OFFSET_FEET_TO_CAMERA
 
     @property
     def camPos(self) -> glm.vec3:
@@ -114,8 +114,6 @@ class Player(PhysicalBox):
     def handle_collision(self):
         # get colliding blocks
         collidingBlocks: set[Block] = self.world.query_aabb_blocks(self.bounds)
-        if not len(collidingBlocks):
-            return
         grounded: bool = False # assume not grounded initially
 
         correctionVector: glm.vec3 = glm.vec3()
@@ -155,18 +153,17 @@ class Player(PhysicalBox):
                     if self.velocity.y <= 0.0:
                         correctionVector.y -= correction.y
                 self.velocity.y = 0.0
-
-            if correction.x:
+            if correctionVector.x:
                 self.velocity.x = 0.0
-            if correction.z:
+            if correctionVector.z:
                 self.velocity.z = 0.0
 
-            self.applyMovement(correctionVector)
+        self.applyMovement(correctionVector)
 
-            self.isGrounded = grounded
+        self.isGrounded = grounded
 
-            if self.isGrounded and self.velocity.y < 0.0:
-                self.velocity = 0.0
+        if self.isGrounded and self.velocity.y < 0.0:
+            self.velocity = 0.0
     def applyMovement(self, movement: glm.vec3):
         self.pos += movement
         self.camera.Position += movement
