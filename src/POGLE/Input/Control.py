@@ -1,10 +1,10 @@
 from POGLE.Input.Input import *
 
 class _CtrlIDMove(Enum):
-    FORWARD = auto()
+    FORWARD = 0
     BACKWARD = auto()
-    LEFT = auto()
     RIGHT = auto()
+    LEFT = auto()
     UP = auto()
     DOWN = auto()
 

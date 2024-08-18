@@ -121,12 +121,11 @@ class HelloLayer(Layer):
         if self.cursor_timer > 0: self.cursor_timer -= 1
         if self.tab_timer > 0: self.tab_timer-=1
         if self.chunk_shift_timer > 0: self.chunk_shift_timer-=1
+        game.update(deltaTime)
         for boundCtrl in GetBoundControls():
             ctrlID = boundCtrl.GetID()
             if boundCtrl.GetInputState().value:
-                if ctrlID in Control.ID.MoveCtrls:
-                    game.player.move(ctrlID, deltaTime)
-                elif ctrlID == Control.ID.Config.CAM_CTRL_TGL:
+                if ctrlID == Control.ID.Config.CAM_CTRL_TGL:
                     if not self.cursor_timer:
                         game.playerCam.look_enabled(self.toggle_cam_control())
                         self.cursor_timer = 10
@@ -139,7 +138,9 @@ class HelloLayer(Layer):
                         print(game.worldRenderer)
                         print(self.renderDistance + 1)
                         self.tab_timer = 20
-                elif not self.chunk_shift_timer:
+                elif ctrlID.value >= Control.ID.Config.CHUNK_WEST.value:
+                    if self.chunk_shift_timer:
+                       continue
                     if ctrlID == Control.ID.Config.CHUNK_WEST:
                         game.worldRenderer._shift_rendered_chunks(glm.vec2(-1, 0))
                     elif ctrlID == Control.ID.Config.CHUNK_SOUTH:
@@ -148,7 +149,6 @@ class HelloLayer(Layer):
                         game.worldRenderer._shift_rendered_chunks(glm.vec2(1, 0))
                     elif ctrlID == Control.ID.Config.CHUNK_NORTH:
                         game.worldRenderer._shift_rendered_chunks(glm.vec2(0, -1))
-                    print(game.worldRenderer)
                     self.chunk_shift_timer = 20
 
         if game.playerCam.process_mouse:

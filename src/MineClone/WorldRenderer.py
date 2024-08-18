@@ -29,7 +29,6 @@ class WorldRenderer:
             lastOrigin: glm.vec2 = self.originChunk.worldChunkPos
             self._set_origin_chunk()
             originDelta: glm.vec2 = self.originChunk.worldChunkPos - lastOrigin
-
             absDelta = glm.abs(originDelta)
             if absDelta[0] <= 1:
                 if absDelta[1] <= 1:

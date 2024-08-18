@@ -13,7 +13,6 @@ class Hit:
         self.delta: glm.vec3 = glm.vec3()  # overlap between two objects, vector to correct
         self.time: float = 0.0  # fraction from 0 to 1 for segment / sweep indicating how far along line collision occured
 
-
 class Sweep:
     def __init__(self):
         self.hit: Hit = None  # hit object or None if no collision
@@ -30,9 +29,24 @@ class AABB:
 
 
 class Collider:
+    hitRecall: dict[Collider, dict[Collider | glm.vec3, Hit]] = {}
+    sweepRecall: dict[Collider, dict[Collider | glm.vec3, Sweep]] = {}
     def sweepAABB(self, box: AABB, delta: glm.vec3) -> Sweep:
         pass
 
+    def __init__(self):
+        Collider.hitRecall[self] = {}
+        self.hitRecall: dict[Collider | glm.vec3, Hit] = Collider.hitRecall[self]
+        Collider.sweepRecall[self] = {}
+        self.sweepRecall: dict[Collider | glm.vec3, Sweep] = Collider.sweepRecall[self]
+
+    def recallHit(self, collider: Collider | glm.vec3) -> Hit | None:
+        if self.hitRecall.get(collider):
+            return self.hitRecall.pop(collider)
+
+    def recallSweep(self, collider: Collider | glm.vec3) -> Hit | None:
+        if self.sweepRecall.get(collider):
+            return self.sweepRecall.pop(collider)
 
 class AABB(Collider):
     __create_key = object()
@@ -44,8 +58,10 @@ class AABB(Collider):
     def __init__(self, create_key, pos: glm.vec3, size: glm.vec3):
         assert (create_key == AABB.__create_key), \
             "AABB objects must be created using AABB._new"
+        super().__init__()
         self.pos: glm.vec3 = pos
         self.size: glm.vec3 = size
+
 
     @property
     def half(self) -> glm.vec3:
@@ -104,6 +120,7 @@ class AABB(Collider):
                 hit.pos.x = point.x
                 hit.pos.y = point.y
                 hit.pos.z = self.pos.z + (self.half.z * sign.z)
+            self.hitRecall[point] = hit
             return hit
 
         # return None if no intersection
@@ -144,6 +161,8 @@ class AABB(Collider):
             farHit.normal.z = sign.z
         farHit.delta = (1.0 - farHit.time) * - delta
 
+        self.hitRecall[nearTime] = nearHit
+        self.hitRecall[farTime] = farHit
         return [nearHit, farHit]
 
     def intersectAABB(self, box: AABB) -> Hit:
@@ -178,6 +197,7 @@ class AABB(Collider):
                 hit.pos.x = box.pos.x
                 hit.pos.y = box.pos.y
                 hit.pos.z = self.pos.z + (self.half.z * sign.z)
+            self.hitRecall[box] = hit
             return hit
 
         # return None if no intersection
@@ -240,6 +260,12 @@ class Physical:
 
     def _set_collider(self, collider: type(_collider)):
         self._collider: type(collider) = collider
+
+    def recallHit(self, collider: Collider | glm.vec3) -> Hit:
+        return self._collider.recallHit(collider)
+
+    def recallSweep(self, collider: Collider | glm.vec3) -> Sweep:
+        return self._collider.recallSweep(collider)
 
 
 class PhysicalBox(Physical):

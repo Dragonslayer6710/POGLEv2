@@ -55,8 +55,7 @@ class World(PhysicalBox):
         return self._get_chunk(x, z)
 
     def get_chunk_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Chunk:
-        x, z = [int(i) for i in (glm.vec2(worldBlockPos.xz) + _WORLD_CHUNK_AXIS_LENGTH)]
-        return self._get_chunk(x, z)
+        return self.get_chunk_from_world_chunk_pos(glm.floor(glm.vec2(worldBlockPos.xz) / _CHUNK_WIDTH))
 
     def get_block_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Block:
         self.get_chunk_from_world_block_pos(worldBlockPos).get_block_from_world_block_pos(worldBlockPos)

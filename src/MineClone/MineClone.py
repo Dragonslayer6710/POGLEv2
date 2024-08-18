@@ -6,9 +6,13 @@ class Game:
         self.world: World = World()
         self.world.update()
         self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
-        self.player: Player = Player(glm.vec3(0,2,0))
+        self.player: Player = Player(self.world, glm.vec3(0,5,0))
 
     @property
     def playerCam(self) -> Camera:
         return self.player.camera
+
+    def update(self, deltaTime: float):
+        self.player.update(deltaTime)
+        self.worldRenderer.update_origin(self.player.pos)
 

@@ -22,7 +22,6 @@ class Camera:
         self.Front = CAMERA_INITIAL_FRONT
         self.Up = glm.vec3()
         self.Right = glm.vec3()
-        self.MovementSpeed = SPEED
         self.MouseSensitivity = SENSITIVITY
         self.FOV = FOV
 
