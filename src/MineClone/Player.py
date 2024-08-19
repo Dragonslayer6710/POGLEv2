@@ -70,7 +70,6 @@ class Player(PhysicalBox):
             return offset
         else:
             thirdPersonOffset: glm.vec3 =  -4 * glm.normalize(self.camera.Front)
-            thirdPersonOffset.y = 0.5
             return offset + thirdPersonOffset
 
 
