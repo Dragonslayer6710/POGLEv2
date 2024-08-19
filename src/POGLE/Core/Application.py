@@ -2,9 +2,16 @@ from POGLE.Display.Window import *
 from POGLE.Display.Layer.LayerStack import *
 from POGLE.Input.Control import *
 
-class Application:
+class _Application:
     pass
 
+def _GetApp() -> _Application:
+    return _Instance
+
+def GetApplication() -> _Application:
+    return _GetApp()
+
+from POGLE.Display.Layer.ImGui.ImGuiLayer import *
 
 
 import os
@@ -59,7 +66,8 @@ class Application:
 
         self._LayerStack = LayerStack()
 
-        # TODO: IMGUI Layer
+        self._ImGuiLayer: ImGuiLayer = ImGuiLayer()
+        self.push_overlay(self._ImGuiLayer)
 
     def on_event(self, e: Event):
         dispatcher = EventDispatcher(e)
@@ -117,7 +125,10 @@ class Application:
                 for layer in self._LayerStack:
                     layer.OnUpdate(deltaTime)
 
-                # TODO: imgui begin to end
+                self._ImGuiLayer.Begin()
+                for layer in self._LayerStack:
+                    layer.OnImGuiRender()
+                self._ImGuiLayer.End()
 
             self._Window.on_update()
 
@@ -145,8 +156,4 @@ class Application:
 
 _Instance: Application = None
 
-def _GetApp() -> Application:
-    return _Instance
-
-def GetApplication() -> Application:
-    return _GetApp()
+_Application = Application

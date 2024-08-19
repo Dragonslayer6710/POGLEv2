@@ -13,6 +13,8 @@ _WORLD_SIZE = glm.vec3(_BLOCKS_IN_ROW, _CHUNK_HEIGHT, _BLOCKS_IN_ROW)
 _WORLD_SIZE_HALF = _WORLD_SIZE / 2
 
 _WORLD_MID_POINT = glm.vec3(0, _WORLD_SIZE_HALF.y, 0)
+_WORLD_MIN_POINT = _WORLD_MID_POINT - _WORLD_SIZE_HALF
+_WORLD_MAX_POINT = _WORLD_MIN_POINT + _WORLD_SIZE_HALF
 
 _CHUNKS_IN_WORLD = _CHUNKS_IN_ROW * _CHUNKS_IN_ROW
 
@@ -23,11 +25,11 @@ class World(PhysicalBox):
     chunks: list[list[Chunk]] = [[Chunk(glm.vec2(x, z)) for z in _WORLD_CHUNK_RANGE] for x in _WORLD_CHUNK_RANGE]
     chunk_instances: list[np.ndarray] = [None] * len(_WORLD_CHUNK_RANGE) * len(_WORLD_CHUNK_RANGE)
     def __init__(self):
-        self.bounds = AABB.from_pos_size(_WORLD_MID_POINT, _WORLD_SIZE)
+        self.bounds = AABB.from_pos_size(_WORLD_MID_POINT, _WORLD_SIZE + glm.vec3(1))
         self.chunks = copy.deepcopy(World.chunks)
         self.worldWidth = len(self.chunks)
 
-        self.quadtree: QuadTree = QuadTree.XZ(self.bounds, _CHUNK_SIZE)
+        self.quadtree: QuadTree = QuadTree.XZ(self.bounds, _CHUNK_SIZE + glm.vec3(1))
         for chunkX in range(self.worldWidth):
             for chunkZ in range(self.worldWidth):
                 chunk = self.chunks[chunkX][chunkZ]

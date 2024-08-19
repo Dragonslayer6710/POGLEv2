@@ -74,3 +74,12 @@ class CrosshairMesh(Mesh):
 
     def draw(self):
         super().draw(self.crosshairShader)
+
+class CubeMesh(Mesh):
+    def __init__(self, modelMatrix: glm.mat4, color: glm.vec3 = Color.WHITE, alpha: float = 1.0):
+        self.shader = ShaderProgram()
+        cube = Cube(color, alpha, modelMatrix)
+        super().__init__(cube, instances=cube.instances)
+
+    def draw(self, projection: glm.mat4, view: glm.mat4):
+        super().draw(self.shader, projection, view)

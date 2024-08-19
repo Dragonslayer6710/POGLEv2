@@ -13,7 +13,7 @@ class Layer:
     def OnDetach(self):
         pass
 
-    def OnUpdate(self):
+    def OnUpdate(self, timeDelta: float):
         pass
 
     def OnImGuiRender(self):

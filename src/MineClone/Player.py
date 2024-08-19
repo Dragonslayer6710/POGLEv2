@@ -50,13 +50,29 @@ class Player(PhysicalBox):
             if boundCtrl.GetType() == CTRL.Type.MOVEMENT:
                 self.boundMoveControls.append(boundCtrl)
 
+        self.firstPersonCamera: bool = False
+
+    @property
+    def playerModelMatrix(self) -> glm.mat4:
+        return NMM(self.pos, s=_PLAYER_DIMENSIONS)
+
+    @property
+    def playerMesh(self) -> CubeMesh:
+        return CubeMesh(self.playerModelMatrix, alpha=0.5)
     @property
     def feetPos(self) -> glm.vec3:
         return self.pos - _PLAYER_OFFSET_FEET_TO_CENTRE
 
     @property
     def camOffset(self) -> glm.vec3:
-        return self.camera.Front + _PLAYER_VERTICAL_OFFSET_FEET_TO_CAMERA
+        offset: glm.vec3 = self.camera.Front + _PLAYER_VERTICAL_OFFSET_FEET_TO_CAMERA
+        if self.firstPersonCamera:
+            return offset
+        else:
+            thirdPersonOffset: glm.vec3 =  -4 * glm.normalize(self.camera.Front)
+            thirdPersonOffset.y = 0.5
+            return offset + thirdPersonOffset
+
 
     @property
     def camPos(self) -> glm.vec3:
@@ -166,6 +182,8 @@ class Player(PhysicalBox):
             self.velocity = 0.0
     def applyMovement(self, movement: glm.vec3):
         self.pos += movement
+        if not self.firstPersonCamera:
+            self.camera.Position = self.camPos
         self.camera.Position += movement
 
     def move(self, deltaTime: float):
@@ -198,3 +216,6 @@ class Player(PhysicalBox):
         self.handle_movement_input()
         self.move(deltaTime)
 
+    def draw(self, projection: glm.mat4, view: glm.mat4):
+        if not self.firstPersonCamera:
+            self.playerMesh.draw(projection, view)

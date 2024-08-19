@@ -62,7 +62,7 @@ class Chunk(PhysicalBox):
             self._neighbourPos: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.worldChunkPos for k, v in
                                                                   Chunk.neighbourOffsets.items()}
             self.worldChunkBlockPos: glm.vec3 = glm.vec3(worldChunkPos[0], 0, worldChunkPos[1]) * _CHUNK_WIDTH
-            self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE)
+            self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE + glm.vec3(1))
 
         self.is_chunk: bool = self.chunkID == Chunk.ID.Valid
 

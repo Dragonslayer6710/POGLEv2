@@ -3,14 +3,14 @@ from POGLE.Geometry.Shape2D import *
 
 class WireframeCube(Shape):
     positions = [
-        glm.vec3(-0.5,  0.5,  0.5),  # Front Top Left
-        glm.vec3( 0.5,  0.5,  0.5),  # Front Top Right
-        glm.vec3( 0.5, -0.5,  0.5),  # Front Bottom Right
-        glm.vec3(-0.5, -0.5,  0.5),  # Front Bottom Left
-        glm.vec3( 0.5,  0.5, -0.5),  # Back Top Right
-        glm.vec3(-0.5,  0.5, -0.5),  # Back Top Left
-        glm.vec3(-0.5, -0.5, -0.5),  # Back Bottom Left
-        glm.vec3( 0.5, -0.5, -0.5),  # Back Bottom Right
+        glm.vec3(-0.5,  0.5,  0.5),  # 0: Front Top Left
+        glm.vec3( 0.5,  0.5,  0.5),  # 1: Front Top Right
+        glm.vec3( 0.5, -0.5,  0.5),  # 2: Front Bottom Right
+        glm.vec3(-0.5, -0.5,  0.5),  # 3: Front Bottom Left
+        glm.vec3( 0.5,  0.5, -0.5),  # 4: Back Top Right
+        glm.vec3(-0.5,  0.5, -0.5),  # 5: Back Top Left
+        glm.vec3(-0.5, -0.5, -0.5),  # 6: Back Bottom Left
+        glm.vec3( 0.5, -0.5, -0.5),  # 7: Back Bottom Right
     ]
 
     indices = [
@@ -140,6 +140,33 @@ class TexQuadCube(QuadCube):
             instanceElements = instance.data[0:2]
             outerModelMatrices = instance.data[2]
         super().__init__(outerModelMatrices, [self.texture_coords], self._vertexAttributes, instanceElements, self._instanceAttributes)
+
+class Cube(Shape):
+    positions = WireframeCube.positions
+    indices = [
+        # Front Face
+        0, 1, 2,
+        2, 3, 0,
+        # Back Face
+        4, 5, 6,
+        6, 7, 4,
+        # Left Face
+        4, 0, 3,
+        3, 5, 4,
+        # Right Face
+        1, 4, 7,
+        7, 2, 1,
+        # Top Face
+        5, 4, 1,
+        1, 0, 5,
+        # Bottom Face
+        3, 2, 7,
+        7, 6, 3
+    ]
+
+    def __init__(self, color: glm.vec3, alpha: float, modelMat: glm.vec4):
+        super().__init__(instanceElements=[[color], [alpha], [modelMat]],
+                         instanceAttributes=[FloatVA.Vec3(1), FloatVA.Single(1), FloatVA.Mat4()])
 
 class Shapes:
     # 2D

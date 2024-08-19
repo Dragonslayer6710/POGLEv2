@@ -3,15 +3,17 @@ import random
 from POGLE.Core.Application import *
 from MineClone.MineClone import *
 from MineClone.World import _WORLD_CHUNK_AXIS_LENGTH
-game = None
+game: Game = None
 class HelloLayer(Layer):
     def __init__(self, renderer: Renderer):
         super().__init__("Hello Layer!")
         self._Renderer = renderer
 
     def OnAttach(self):
-
+        global game
         InitControls()
+        game = Game()
+
         self.initUpdate = True
         self.cursor_timer = 0
         self.tab_timer = 0
@@ -40,11 +42,11 @@ class HelloLayer(Layer):
         pass
 
     def OnImGuiRender(self):
-        pass
+        playerFeetPos = game.player.feetPos
+        imgui.input_float3("Player Pos:",playerFeetPos)
 
     import random
     def OnUpdate(self, deltaTime: float):
-        global game
         if self.initUpdate:
             colors = [
                 Color.BLACK,
@@ -87,8 +89,6 @@ class HelloLayer(Layer):
             #testBlock = Block(NMM(glm.vec3(0,0,-5)))
             #testBlock.visibleSides[Block.Side.Top] = False
             #instance_data = testBlock.get_instance_data()
-            game = Game()
-            game.worldRenderer = game.worldRenderer
             #instance_data = testWorldRenderer.get_instance_data()
 
             #self.testBlockMesh = QuadCubeMesh(testQCs)
@@ -96,16 +96,12 @@ class HelloLayer(Layer):
             #self.testBlockShader = ShaderProgram("block", "block")
             #self.testBlockShader.use()
 
-            game.worldRenderer.worldBlockShader.use()
-
             self.renderDistance = game.worldRenderer.renderDistance
             self.maxRenderDistance = _WORLD_CHUNK_AXIS_LENGTH
             self.minRenderDistance = 1
             self.renderDistanceRangeSize = self.maxRenderDistance - self.minRenderDistance + 1
             #self.testWorldRenderer._set_render_distance(self.renderDistance)
 
-            self.crosshairMesh = CrosshairMesh(glm.vec2(0.5))
-            self.wcCubeMesh = WireframeCubeMesh(glm.vec3())
 
             glClearColor(0.5, 0.3, 0.1, 1.0)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -167,9 +163,7 @@ class HelloLayer(Layer):
         # self.qcMesh.draw()
         # qcMeshB.draw()
         # wcMesh.draw()
-        game.worldRenderer.draw(projection, view)
-        self.wcCubeMesh.draw(projection, view)
-        self.crosshairMesh.draw()
+        game.draw(projection, view)
 
     def toggle_cam_control(self) -> bool:
         window = GetApplication().get_window()
