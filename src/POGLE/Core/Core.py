@@ -9,7 +9,7 @@ import numpy as np
 from enum import Enum
 from collections import deque
 
-
+from typing import Tuple
 def clamp(n, min, max):
     if n < min:
         return min

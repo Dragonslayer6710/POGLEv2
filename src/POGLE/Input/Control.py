@@ -1,5 +1,6 @@
 from POGLE.Input.Input import *
 
+
 class _CtrlIDMove(Enum):
     FORWARD = 0
     BACKWARD = auto()
@@ -8,23 +9,39 @@ class _CtrlIDMove(Enum):
     UP = auto()
     DOWN = auto()
 
+
+lastMove = list(_CtrlIDMove.__dict__.items())[-2][1].value
+
+
+class _CtrlIDAction(Enum):
+    SPRINT = lastMove + 1
+    ATTACK = auto()
+    INTERACT = auto()
+
+
+lastAction = list(_CtrlIDAction.__dict__.items())[-2][1].value
+
+
 class _CtrlIDConfig(Enum):
-    CAM_CTRL_TGL = len(_CtrlIDMove)
+    CAM_CTRL_TGL = lastAction + 1
     QUIT = auto()
     CYCLE_RENDER_DISTANCE = auto()
-    CHUNK_WEST = auto()
-    CHUNK_SOUTH = auto()
-    CHUNK_EAST = auto()
-    CHUNK_NORTH = auto()
+
+
 class Control:
     class ID:
         Move = _CtrlIDMove
-        MoveCtrls = [ctrl for ctrl in Move]
+        _MoveCtrls = [ctrl for ctrl in Move]
+        Action = _CtrlIDAction
+        _ActionCtrls = [ctrl for ctrl in Action]
         Config = _CtrlIDConfig
-        CfgCtrls = [ctrl for ctrl in Config]
+        _CfgCtrls = [ctrl for ctrl in Config]
+
+
     class Type(Enum):
-        MOVEMENT = auto()
+        MOVEMENT = 0
         CAMERA = auto()
+        ACTION = auto()
         CONFIG = auto()
 
     _idTypeMap: dict[ID, Type] = {
@@ -35,14 +52,14 @@ class Control:
         ID.Move.UP: Type.MOVEMENT,
         ID.Move.DOWN: Type.MOVEMENT,
 
+        ID.Action.SPRINT: Type.ACTION,
+        ID.Action.ATTACK: Type.ACTION,
+        ID.Action.INTERACT: Type.ACTION,
+
         ID.Config.CAM_CTRL_TGL: Type.CONFIG,
         ID.Config.QUIT: Type.CONFIG,
 
         ID.Config.CYCLE_RENDER_DISTANCE: Type.CONFIG,
-        ID.Config.CHUNK_WEST: Type.CONFIG,
-        ID.Config.CHUNK_SOUTH: Type.CONFIG,
-        ID.Config.CHUNK_EAST: Type.CONFIG,
-        ID.Config.CHUNK_NORTH: Type.CONFIG
     }
 
     _InitialBinds: dict[ID, int] = {
@@ -53,14 +70,14 @@ class Control:
         ID.Move.UP: KeyCode.Space,
         ID.Move.DOWN: KeyCode.LeftControl,
 
-        ID.Config.CAM_CTRL_TGL: MouseCode.ButtonLeft,
-        ID.Config.QUIT: KeyCode.Escape,
+        ID.Action.SPRINT: KeyCode.LeftShift,
+        ID.Action.ATTACK: MouseCode.ButtonLeft,
+        ID.Action.INTERACT: MouseCode.ButtonRight,
+
+        ID.Config.CAM_CTRL_TGL: KeyCode.Escape,
+        ID.Config.QUIT: KeyCode.Q,
 
         ID.Config.CYCLE_RENDER_DISTANCE: KeyCode.Tab,
-        ID.Config.CHUNK_WEST: KeyCode.KP4,
-        ID.Config.CHUNK_SOUTH: KeyCode.KP2,
-        ID.Config.CHUNK_EAST: KeyCode.KP6,
-        ID.Config.CHUNK_NORTH: KeyCode.KP8,
     }
 
     class State(Enum):
@@ -116,7 +133,6 @@ _Controls: dict[Control.ID, Control] = None
 _BoundControls: list[Control] = None
 
 
-
 def ResetControls(initialControls: dict[Control.ID, int] = None):
     ResetInputs()
     if initialControls:
@@ -133,6 +149,7 @@ def _InitControls(initialControls: dict[Control.ID, int] = None):
 
 def _NewControl(ctrl: Control):
     _Controls[ctrl.GetID()] = ctrl
+
 
 def InitControls(initialControls: dict[Control.ID, int] = Control._InitialBinds):
     _InitControls(initialControls)

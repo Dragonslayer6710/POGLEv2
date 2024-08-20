@@ -134,7 +134,7 @@ class Window:
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, props.Hints.Minor)
         glfwWindowHint(GLFW_OPENGL_PROFILE, props.Hints.Profile)
 
-        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE)
+        #glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE)
 
         glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE)
 

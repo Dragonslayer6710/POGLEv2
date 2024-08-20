@@ -62,3 +62,11 @@ class Crosshair(Shape):
     def __init__(self, scale: glm.vec2, color: glm.vec3, alpha: float):
         super().__init__(instanceElements=[[scale], [color], [alpha]],
                          instanceAttributes=[FloatVA.Vec2(1), FloatVA.Vec3(1), FloatVA.Single(1)])
+
+from POGLE.Physics.Collisions import Ray
+class LineSegment(Shape):
+    indices = [0, 1]
+
+    def __init__(self, ray: Ray, color: glm.vec3, alpha: float):
+        self.positions = [ray.start, ray.start + ray.dir]
+        super().__init__(instanceElements=[[color], [alpha]], instanceAttributes=[FloatVA.Vec3(1), FloatVA.Single(1)])

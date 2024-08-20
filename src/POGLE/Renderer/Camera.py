@@ -9,9 +9,10 @@ SPEED       =  2.5
 SENSITIVITY =  0.1
 FOV        =  45.0
 
-_Move = Control.ID.Move
-
 CAMERA_INITIAL_FRONT = glm.vec3(0.0, 0.0, -1.0)
+
+from POGLE.Physics.Collisions import Ray
+
 class Camera:
     def __init__(self, posX = 0.0, posY = 0.0, posZ = 0.0, upX = 0.0, upY = 1.0, upZ = 0.0, yaw = YAW, pitch = PITCH):
         self.Position = glm.vec3(posX, posY, posZ)

@@ -25,10 +25,17 @@ class WireframeCube(Shape):
     ]
 
     def __init__(self, position: glm.vec3, color: glm.vec3, alpha: float):
-
-        super().__init__(instanceElements=[[color], [alpha], [NMM(position)]],
-                         instanceAttributes=[FloatVA.Vec3(1), FloatVA.Single(1), FloatVA.Mat4()])
-
+        instanceAttributes = [FloatVA.Vec3(1), FloatVA.Single(1), FloatVA.Mat4()]
+        if type(position) == list:
+            if type(color) != list:
+                color = [color for pos in position]
+            if type(alpha) != list:
+                alpha = [alpha for pos in position]
+            super().__init__(instanceElements=[color, alpha, [NMM(pos, s=glm.vec3(1.0001)) for pos in position]],
+                             instanceAttributes=instanceAttributes)
+        else:
+            super().__init__(instanceElements=[[color], [alpha], [NMM(position)]],
+                             instanceAttributes=instanceAttributes)
 
 class QuadCube(Quad):
     face_matrices = [
@@ -91,6 +98,21 @@ class ColQuadCube(QuadCube):
             outerModelMatrices = instance.data[2]
         super().__init__(outerModelMatrices, instanceElements = instanceElements, instanceAttributes=self._instanceAttributes)
 
+class WireframeQuadCube(ColQuadCube):
+    indices = [
+        0, 1,
+        1, 2,
+        2, 3,
+        3, 0
+    ]
+    class Instance(ColQuadCube.Instance):
+        def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.BLACK,
+                     sideColAlphas: list[float] = 6 * [1.0]):
+            super().__init__(outerModelMatrix, sideCols, sideColAlphas)
+
+        def __init__(self, outerModelMatrices: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.BLACK,
+                     sideColAlphas: list[float] = 6 * [1.0]):
+            super().__init__(outerModelMatrices, sideCols, sideColAlphas)
 
 class TexQuadCube(QuadCube):
     texture_coords = [

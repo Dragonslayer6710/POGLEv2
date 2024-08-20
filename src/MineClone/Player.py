@@ -1,6 +1,7 @@
 import math
 
 import glm
+import numpy as np
 
 from MineClone.World import *
 from POGLE.Renderer.Camera import *
@@ -27,6 +28,9 @@ _TERMINAL_VELOCITY: float = -math.sqrt(_2X_FABS_GRAVITY)
 
 _JUMP_HEIGHT: float = 2
 _JUMP_FORCE: float = math.sqrt(_2X_FABS_GRAVITY * _JUMP_HEIGHT)
+
+_PLAYER_REACH_RADIUS: float = 4.5
+
 class Player(PhysicalBox):
 
     def __init__(self, world: World, feetPos: glm.vec3):
@@ -50,7 +54,14 @@ class Player(PhysicalBox):
             if boundCtrl.GetType() == CTRL.Type.MOVEMENT:
                 self.boundMoveControls.append(boundCtrl)
 
-        self.firstPersonCamera: bool = False
+        self.firstPersonCamera: bool = True
+
+        self.collidingBlockPositions = None
+
+        self.targetBlock: Block = None
+        self.checkTargetBlock = True
+        self.reachRadius = _PLAYER_REACH_RADIUS
+        self.blockReach = glm.vec2(4.0, 3.0)
 
     @property
     def playerModelMatrix(self) -> glm.mat4:
@@ -59,23 +70,41 @@ class Player(PhysicalBox):
     @property
     def playerMesh(self) -> CubeMesh:
         return CubeMesh(self.playerModelMatrix, alpha=0.5)
+
+    @property
+    def collidingBlockWireCubesMesh(self) -> WireframeCubeMesh:
+        return WireframeCubeMesh(self.collidingBlockPositions)
+
+    @property
+    def targetBlockWireframeCubeMesh(self) -> WireframeCubeMesh:
+        return self.targetBlock.get_wireframe_cube_mesh()
+
     @property
     def feetPos(self) -> glm.vec3:
         return self.pos - _PLAYER_OFFSET_FEET_TO_CENTRE
 
+    @ property
+    def camFront(self) -> glm.vec3:
+        return self.camera.Front
     @property
-    def camOffset(self) -> glm.vec3:
-        offset: glm.vec3 = self.camera.Front + _PLAYER_VERTICAL_OFFSET_FEET_TO_CAMERA
-        if self.firstPersonCamera:
-            return offset
-        else:
-            thirdPersonOffset: glm.vec3 =  -4 * glm.normalize(self.camera.Front)
-            return offset + thirdPersonOffset
+    def eyePos(self) -> glm.vec3:
+        return self.pos + _PLAYER_VERTICAL_OFFSET_FEET_TO_CAMERA
 
+    @property
+    def thirdPersonCamPos(self) -> glm.vec3:
+        return self.eyePos - 5 * glm.normalize(self.camFront)
 
     @property
     def camPos(self) -> glm.vec3:
-        return self.pos + self.camOffset
+        if self.firstPersonCamera:
+            return self.eyePos
+        else:
+            return self.thirdPersonCamPos
+
+    @property
+    def reachLineDelta(self) -> glm.vec3:
+        return self.camFront * self.reachRadius
+
 
     def apply_gravity(self):
         self.acceleration.y += _GRAVITY
@@ -98,9 +127,9 @@ class Player(PhysicalBox):
                     direction = -1 if id.value % 2 else 1
                     if id.value < 2:
                         if self.isFlying:
-                            vectorMod: glm.vec3 = self.camera.Front
+                            vectorMod: glm.vec3 = self.camFront
                         else:
-                            vectorMod: glm.vec3 = glm.normalize(self.camera.Front)
+                            vectorMod: glm.vec3 = glm.normalize(self.camFront)
                             vectorMod.y = 0
                     else:
                         vectorMod: glm.vec3 = self.camera.Right
@@ -127,63 +156,81 @@ class Player(PhysicalBox):
             self.acceleration += moveVector * self.moveSpeed
 
     def handle_collision(self):
-        # get colliding blocks
+        # Get colliding blocks within the current bounds
         collidingBlocks: set[Block] = self.world.query_aabb_blocks(self.bounds)
-        grounded: bool = False # assume not grounded initially
+        if len(collidingBlocks):
+            self.collidingBlockPositions = [block.pos for block in collidingBlocks]
+        elif self.collidingBlockPositions:
+            self.collidingBlockPositions = None
+        grounded: bool = False  # Assume not grounded initially
 
-        correctionVector: glm.vec3 = glm.vec3()
-        collisions = [0 for i in range(6)]
+        # Initialize the correction vector and collision array
+        correctionVector: glm.vec3 = glm.vec3(0.0, 0.0, 0.0)
+        collisions = [0.0 for _ in range(6)]  # Stores corrections in [+, -, +, -, +, -] for [x, y, z]
+
+        # Iterate through each block to check for collisions
         for block in collidingBlocks:
             if not block.is_block:
                 continue
 
+            # Retrieve the hit information from the block
             hit: Hit = block.recallHit(self.bounds)
             correction: glm.vec3 = hit.delta
 
+            # Accumulate the correction vector
             correctionVector += correction
 
+            # Track the collision magnitude for each axis
             if correction.x:
                 if correction.x < 0.0:
-                    collisions[1] = correction.x
+                    collisions[1] = min(collisions[1], correction.x)
                 else:
-                    collisions[0] = correction.x
+                    collisions[0] = max(collisions[0], correction.x)
             if correction.y:
                 if correction.y < 0.0:
-                    collisions[3] = correction.y
+                    collisions[3] = min(collisions[3], correction.y)
                 else:
-                    collisions[2] = correction.y
+                    collisions[2] = max(collisions[2], correction.y)
             if correction.z:
                 if correction.z < 0.0:
-                    collisions[5] = correction.z
+                    collisions[5] = min(collisions[5], correction.z)
                 else:
-                    collisions[4] = correction.z
+                    collisions[4] = max(collisions[4], correction.z)
 
+            # Handle Y-axis collisions for grounded state and vertical motion stopping
             if correction.y:
-                if correction.y > 0:
+                if correction.y > 0.0:
                     if grounded:
-                        correctionVector.y -= correction.y
+                        correctionVector.y -= correction.y  # Already grounded, remove this correction
                         continue
-                    grounded = True
-                elif correction.y < 0:
+                    grounded = True  # Set grounded if moving upward and colliding
+                elif correction.y < 0.0:
                     if self.velocity.y <= 0.0:
-                        correctionVector.y -= correction.y
-                self.velocity.y = 0.0
-            if correctionVector.x:
+                        correctionVector.y -= correction.y  # Only correct downward movement
+                self.velocity.y = 0.0  # Stop vertical velocity when colliding vertically
+        if not grounded:
+            # Apply horizontal (X and Z) corrections
+            if collisions[0] or collisions[1]:
                 self.velocity.x = 0.0
-            if correctionVector.z:
+            if collisions[4] or collisions[5]:
                 self.velocity.z = 0.0
 
+        # Apply the accumulated correction vector to the object's movement
         self.applyMovement(correctionVector)
 
+        # Update the grounded state
         self.isGrounded = grounded
 
+        # Ensure downward velocity is reset if grounded
         if self.isGrounded and self.velocity.y < 0.0:
-            self.velocity = 0.0
+            self.velocity.y = 0.0
+
     def applyMovement(self, movement: glm.vec3):
         self.pos += movement
         if not self.firstPersonCamera:
             self.camera.Position = self.camPos
-        self.camera.Position += movement
+        else:
+            self.camera.Position += movement
 
     def move(self, deltaTime: float):
         self.velocity += self.acceleration * deltaTime
@@ -204,6 +251,7 @@ class Player(PhysicalBox):
         self.handle_collision()
 
         self.acceleration = glm.vec3()
+
     cnt = 2
     def update(self, deltaTime: float):
         if self.cnt:
@@ -215,6 +263,51 @@ class Player(PhysicalBox):
         self.handle_movement_input()
         self.move(deltaTime)
 
+        self.acquireTargetBlock()
+
+    def acquireTargetBlock(self):
+        if not self.checkTargetBlock:
+            return
+
+        ray: Ray = Ray.from_start_dir(self.eyePos, self.reachLineDelta)
+        self.targetBlock = None
+        nearBest = np.inf
+        farBest = np.inf
+
+        hitBlocks: set[Block] = self.world.query_segment_blocks(ray)
+        for block in hitBlocks:
+            hits: Tuple[Hit, Hit] = block.recallHit(ray)
+            nearHit, farHit = hits
+            if nearHit.time > self.reachRadius:
+                continue
+
+            if not block.is_block:
+                continue
+
+            if nearHit.time > nearBest:
+                continue
+
+            if nearHit.time == nearBest:
+                if farHit.time > farBest:
+                    continue
+
+            #if abs(ray.dir.y) > self.blockReach[1]:
+            #    continue
+
+            #if glm.length(glm.vec2(ray.dir.xz)) > self.blockReach[0]:
+            #    continue
+            nearBest = min(nearBest, nearHit.time)
+            farBest = min(farBest, farHit.time)
+
+            self.targetBlock = block
+        # TODO: target block face calculation
+
+
+
     def draw(self, projection: glm.mat4, view: glm.mat4):
         if not self.firstPersonCamera:
             self.playerMesh.draw(projection, view)
+        #if self.collidingBlockPositions:
+        #    self.collidingBlockWireCubesMesh.draw(projection, view)
+        if self.targetBlock:
+            self.targetBlockWireframeCubeMesh.draw(projection, view)

@@ -27,6 +27,7 @@ class World(PhysicalBox):
     def __init__(self):
         self.bounds = AABB.from_pos_size(_WORLD_MID_POINT, _WORLD_SIZE + glm.vec3(1))
         self.chunks = copy.deepcopy(World.chunks)
+        self.not_empty_chunks: list[Chunk] = copy.deepcopy(self.chunk_instances)
         self.worldWidth = len(self.chunks)
 
         self.quadtree: QuadTree = QuadTree.XZ(self.bounds, _CHUNK_SIZE + glm.vec3(1))
@@ -36,7 +37,9 @@ class World(PhysicalBox):
                 worldChunkID = chunkX * self.worldWidth + chunkZ
                 chunk.init(self, worldChunkID)
                 self.quadtree.insert(chunk)
-                self.chunk_instances[chunk.worldChunkID] = chunk.get_instance_data()
+                if chunk.not_empty:
+                    self.not_empty_chunks[worldChunkID] = chunk
+
     def query_aabb_chunks(self, boxRange: AABB) -> set[Chunk]:
         return self.quadtree.query_aabb(boxRange)
 
@@ -44,6 +47,15 @@ class World(PhysicalBox):
         hitBlocks: set[Block] = set()
         for hitChunk in self.query_aabb_chunks(boxRange):
             hitChunk.query_aabb_blocks(boxRange, hitBlocks)
+        return hitBlocks
+
+    def query_segment_chunks(self, ray: Ray) -> set[Chunk]:
+        return self.quadtree.query_segment(ray)
+
+    def query_segment_blocks(self, ray: Ray) -> set[Block]:
+        hitBlocks: set[Block] = set()
+        for hitChunk in self.query_segment_chunks(ray):
+            hitChunk.query_segment_blocks(ray, hitBlocks)
         return hitBlocks
 
 
@@ -64,11 +76,10 @@ class World(PhysicalBox):
 
     def update(self) -> bool:
         updated = False
-        for chunkRow in self.chunks:
-            for chunk in chunkRow:
-                if chunk.update():
-                    self.chunk_instances[chunk.worldChunkID] = chunk.get_instance_data()
-                    updated = True
+        for chunk in list(filter((None).__ne__, self.not_empty_chunks)):
+            chunk.update()
+            self.chunk_instances[chunk.worldChunkID] = chunk.get_block_face_instance_data()
+            updated = True
         return updated
 
     def get_instance_data(self):

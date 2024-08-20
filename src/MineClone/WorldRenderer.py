@@ -102,7 +102,7 @@ class WorldRenderer:
         self.chunk_instances = []
         for chunkRow in self.renderedChunks:
             for chunk in chunkRow:
-                self.chunk_instances.append(chunk.get_instance_data())
+                self.chunk_instances.append(chunk.get_block_face_instance_data())
         self._build_mesh()
 
     def get_instance_data(self):

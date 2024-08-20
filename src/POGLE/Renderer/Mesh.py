@@ -48,21 +48,24 @@ class Mesh:
 
 class QuadCubeMesh(Mesh):
 
-    def __init__(self, qc: ColQuadCube):
+    def __init__(self, qc: QuadCube):
         # Initialize Mesh with instances
         super().__init__(qc, instances=qc.instances)
 
 
 class WireframeCubeMesh(Mesh):
-    def __init__(self, position: glm.vec3, color: glm.vec3 = Color.BLACK, alpha: float = 1.0, thickness: float = 1.0):
+    def __init__(self, wfqCube: WireframeQuadCube, instances: Instances, thickness: float = 2.0):
         self.thickness = thickness
         self.shader = ShaderProgram()
-        wcCube = WireframeCube(position, color, alpha)
-        super().__init__(wcCube, instances=wcCube.instances, primitive=GL_LINES)
+
+        super().__init__(wfqCube.vertices, wfqCube.indices, instances=instances, primitive=GL_LINES)
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
+        glLineWidth(self.thickness)
+        glDisable(GL_DEPTH_TEST)
         super().draw(self.shader, projection, view)
-
+        glEnable(GL_DEPTH_TEST)
+        glLineWidth(1.0)
 
 class CrosshairMesh(Mesh):
 
@@ -80,6 +83,15 @@ class CubeMesh(Mesh):
         self.shader = ShaderProgram()
         cube = Cube(color, alpha, modelMatrix)
         super().__init__(cube, instances=cube.instances)
+
+    def draw(self, projection: glm.mat4, view: glm.mat4):
+        super().draw(self.shader, projection, view)
+
+class LineSegmentMesh(Mesh):
+    def __init__(self, ray: Ray, color: glm.vec3 = Color.BLACK, alpha: float = 1.0):
+        self.shader = ShaderProgram("ray")
+        lineSegment = LineSegment(ray, color, alpha)
+        super().__init__(lineSegment, instances=lineSegment.instances, primitive=GL_LINES)
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
         super().draw(self.shader, projection, view)

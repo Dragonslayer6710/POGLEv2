@@ -17,7 +17,6 @@ class HelloLayer(Layer):
         self.initUpdate = True
         self.cursor_timer = 0
         self.tab_timer = 0
-        self.chunk_shift_timer = 0
 
     def OnEvent(self, e: Event):
         typ = e.getEventType()
@@ -43,7 +42,8 @@ class HelloLayer(Layer):
 
     def OnImGuiRender(self):
         playerFeetPos = game.player.feetPos
-        imgui.input_float3("Player Pos:",playerFeetPos)
+        imgui.input_float3("Player Pos:", playerFeetPos - glm.vec3(0, 0.5, 0))
+        imgui.label_text("Target Block:", str(game.player.targetBlock))
 
     import random
     def OnUpdate(self, deltaTime: float):
@@ -109,14 +109,12 @@ class HelloLayer(Layer):
             glEnable(GL_CULL_FACE)
             glCullFace(GL_BACK)
             glFrontFace(GL_CW)
-
             # wcMesh = WireframeCubeMesh()
             self.initUpdate = False
         self._Renderer.clear()
 
         if self.cursor_timer > 0: self.cursor_timer -= 1
         if self.tab_timer > 0: self.tab_timer-=1
-        if self.chunk_shift_timer > 0: self.chunk_shift_timer-=1
         game.update(deltaTime)
         for boundCtrl in GetBoundControls():
             ctrlID = boundCtrl.GetID()
@@ -134,18 +132,6 @@ class HelloLayer(Layer):
                         print(game.worldRenderer)
                         print(self.renderDistance + 1)
                         self.tab_timer = 20
-                elif ctrlID.value >= Control.ID.Config.CHUNK_WEST.value:
-                    if self.chunk_shift_timer:
-                       continue
-                    if ctrlID == Control.ID.Config.CHUNK_WEST:
-                        game.worldRenderer._shift_rendered_chunks(glm.vec2(-1, 0))
-                    elif ctrlID == Control.ID.Config.CHUNK_SOUTH:
-                        game.worldRenderer._shift_rendered_chunks(glm.vec2(0, 1))
-                    elif ctrlID == Control.ID.Config.CHUNK_EAST:
-                        game.worldRenderer._shift_rendered_chunks(glm.vec2(1, 0))
-                    elif ctrlID == Control.ID.Config.CHUNK_NORTH:
-                        game.worldRenderer._shift_rendered_chunks(glm.vec2(0, -1))
-                    self.chunk_shift_timer = 20
 
         if game.playerCam.process_mouse:
             inpStat.s_MouseDeltaX = inpStat.s_NextMousePosX - inpStat.s_MousePosX

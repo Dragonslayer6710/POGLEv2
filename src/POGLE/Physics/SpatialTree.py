@@ -9,7 +9,7 @@ class SpatialTree:
             self.activeDimensions: glm.vec3 = activeDimensions
             self.divisions: int = divisions
             self.childNodes: list[SpatialTree.Node | None] = [None for i in range(self.divisions)]
-            self.segment: list[AABB | None] = [None for node in self.childNodes]
+            self.ray: list[AABB | None] = [None for node in self.childNodes]
             self.activeNodes: int = 0
 
             # Calculate midpoints for each active dimension
@@ -29,12 +29,13 @@ class SpatialTree:
                     else:
                         subMax[j] = self.max[j]  # For inactive dimensions, keep the max bounds unchanged
 
-                self.segment[i] = AABB.from_min_max(subMin, subMax)
+                self.ray[i] = AABB.from_min_max(subMin, subMax)
 
-        def intersect_aabb(self, range: AABB) -> Hit:
-            return self.bounds.intersectAABB(range)
+        def intersect_aabb(self, boxRange: AABB) -> Hit:
+            return self.bounds.intersectAABB(boxRange)
 
-        # def intersectRay(self, range: AABB) -> Hit: return self.bounds.intersectAABB(range)
+        def intersect_segment(self, ray: Ray) -> Hit:
+            return self.bounds.intersectSegment(ray)
 
         def set_active_node(self, index: int):
             self.activeNodes |= (1 << index)
@@ -98,7 +99,7 @@ class SpatialTree:
 
     def subdivide(self, node: Node):
         for i in range(self.divisions):
-            node.childNodes[i] = SpatialTree.Node(node.segment[i], self.activeDimensions, self.divisions)
+            node.childNodes[i] = SpatialTree.Node(node.ray[i], self.activeDimensions, self.divisions)
 
         objectsMoved = 0
         for obj in node.objects:
@@ -130,6 +131,27 @@ class SpatialTree:
                     self.query_aabb(boxRange, result, node.childNodes[i])
             return
 
+    def query_segment(self, ray: Ray, result: set[PhysicalBox] = None, node: Node = None) -> set[PhysicalBox]:
+        if node is None:
+            if result is None:
+                result = set()
+            self.query_segment(ray, result, self.root)
+            return result
+        else:
+            if not node.intersect_segment(ray):  # no intersection between range and node so exit now
+                return
+
+            if not node.activeNodes:  # node is not subdivided
+                for obj in node.objects:
+                    if obj.bounds.intersectSegment(ray):
+                        result.add(obj)
+                return
+
+            # node is subdivided
+            for i in range(node.divisions):
+                if node.is_node_active(i):
+                    self.query_segment(ray, result, node.childNodes[i])
+            return
 
 class Octree(SpatialTree):
     def __init__(self, bounds: AABB, minSize: glm.vec3 = glm.vec3(1)):

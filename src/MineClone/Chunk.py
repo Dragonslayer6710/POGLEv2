@@ -57,6 +57,8 @@ class Chunk(PhysicalBox):
         if None != worldChunkPos:
             self.blocks = copy.deepcopy(Chunk.blocks)
             self.block_instances = copy.deepcopy(Chunk.block_instances)
+            self.not_null_blocks = copy.deepcopy(self.block_instances)
+            self.num_not_null_blocks = 0
             self.chunkID = Chunk.ID.Valid
             self.worldChunkPos: glm.vec2 = worldChunkPos
             self._neighbourPos: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.worldChunkPos for k, v in
@@ -65,6 +67,11 @@ class Chunk(PhysicalBox):
             self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE + glm.vec3(1))
 
         self.is_chunk: bool = self.chunkID == Chunk.ID.Valid
+
+
+    @property
+    def not_empty(self) ->bool:
+        return self.num_not_null_blocks != 0
 
     def init(self, world, worldChunkID: int):
         from MineClone.World import World
@@ -77,15 +84,32 @@ class Chunk(PhysicalBox):
         for x in _CHUNK_WIDTH_RANGE:
             for y in _CHUNK_HEIGHT_RANGE:
                 for z in _CHUNK_WIDTH_RANGE:
-                    block = self.blocks[x][y][z]
-                    chunkBlockID = x * _CHUNK_WIDTH * _CHUNK_HEIGHT + y * _CHUNK_WIDTH + z
                     blockID = Block.ID(random.randrange(0, len(Block.ID)))
-                    block.init(self, chunkBlockID, blockID)
-                    self.octree.insert(block)
-                    self.block_instances[block.chunkBlockID] = block.get_instance_data()
+                    self.set_block(x,y,z,blockID)
+
+    def set_block(self, x: int, y: int, z: int, blockID: Block.ID):
+        block = self.blocks[x][y][z]
+        chunkBlockID = x * _CHUNK_WIDTH * _CHUNK_HEIGHT + y * _CHUNK_WIDTH + z
+        if not block.initialised:
+            block.init(self, chunkBlockID, blockID)
+            self.octree.insert(block)
+            #self.block_instances[chunkBlockID] = block.get_face_instance_data()
+        block: Block = self.not_null_blocks[chunkBlockID]
+        if block == None:
+            block = self.blocks[x][y][z]
+        block.init(self, chunkBlockID, blockID)
+        if block.is_block and blockID is Block.ID.Null:
+            self.num_not_null_blocks -= 1
+            self.not_null_blocks[chunkBlockID] = None
+        elif blockID is not Block.ID.Null:
+            self.num_not_null_blocks += 1
+            self.not_null_blocks[chunkBlockID] = block
 
     def query_aabb_blocks(self, boxRange: AABB, hitBlocks: set[Block] = None) -> set[Block]:
         return self.octree.query_aabb(boxRange, hitBlocks)
+
+    def query_segment_blocks(self, ray: Ray, hitBlocks: set[Block] = None) -> set[Block]:
+        return self.octree.query_segment(ray, hitBlocks)
 
     def get_world_pos(self, blockPos: glm.vec3) -> glm.vec3:
         return self.worldChunkBlockPos + blockPos  # Chunk Pos in world plus chunk rel coordinate
@@ -138,15 +162,16 @@ class Chunk(PhysicalBox):
 
     def update(self) -> bool:
         updated = False
-        for blockPlane in self.blocks:
-            for blockRow in blockPlane:
-                for block in blockRow:
+        #for blockPlane in self.blocks:
+        #    for blockRow in blockPlane:
+        #        for block in blockRow:
+        for block in list(filter((None).__ne__, self.not_null_blocks)):
                     if block.update_side_visibility():
-                        self.block_instances[block.chunkBlockID] = block.get_instance_data()
+                        self.block_instances[block.chunkBlockID] = block.get_face_instance_data()
                         updated = True
         return updated
 
-    def get_instance_data(self):
+    def get_block_face_instance_data(self):
         block_instances = list(filter((None).__ne__, self.block_instances))
         if len(block_instances) == 0:
             return None

@@ -1,7 +1,7 @@
 from POGLE.Core.Application import *
 from POGLE.Physics.SpatialTree import *
+from POGLE.Renderer.Mesh import WireframeCubeMesh
 
-import pickle
 _QUADS_IN_BLOCK = 6
 class Block(PhysicalBox):
     class ID(Enum):
@@ -69,9 +69,11 @@ class Block(PhysicalBox):
         self.blockID: int = id
         self.is_block: bool = self.blockID != Block.ID.Null
         self.is_transparent: bool = self.blockID in Block.transparentBlocks
-
+        self.initialised: bool = False
     def init(self, chunk, chunkBlockID, id: ID):
         from MineClone.Chunk import Chunk
+        self.initialised = True
+
         self.chunk: Chunk = chunk
         self.chunkBlockID = chunkBlockID
         self.bounds = AABB.from_pos_size(self.chunk.get_world_pos(self.chunkBlockPos))
@@ -88,6 +90,7 @@ class Block(PhysicalBox):
             self.adjBlocks: dict[Block.Side, Block] = {
                 side: self.chunk.get_block(self.pos + offset) for side, offset in self.adjBlockOffsets.items()
             }
+
 
     def set(self, id: ID):
         self.blockID: Block.ID = id
@@ -131,7 +134,7 @@ class Block(PhysicalBox):
     def reveal_face(self, side: Side):
         self.edit_side_state(side, True)
 
-    def get_instance_data(self) -> np.ndarray:
+    def get_face_instance_data(self) -> np.ndarray:
         if self.is_block:
             instance_data = np.array([])
             cnt = 0
@@ -144,4 +147,22 @@ class Block(PhysicalBox):
             return instance_data
         return None
 
+    def get_wireframe_cube_mesh(self) -> WireframeCubeMesh | None:
+        if self.is_block:
+            wfqCube = WireframeQuadCube(NMM(self.pos),Color.BLACK)
+            wire_frame_faces = split_array(wfqCube.instances.data, 6)
+            instance_data = np.array([])
+            cnt = 0
+            for side in Block.Side:
+                if self.visibleSides[side]:
+                    cnt+=1
+                    instance_data = np.concatenate((instance_data, wire_frame_faces[side.value]), dtype=wire_frame_faces[side.value].dtype)
+            if cnt == 0:
+                return None
+            return WireframeCubeMesh(wfqCube,
+                              Instances(instance_data, wfqCube.instances.layout, True))
+        return None
+
+    def __str__(self):
+        return f"Block(id: {self.blockID}, pos: {self.pos})"
 BLOCK_NULL = Block(None)

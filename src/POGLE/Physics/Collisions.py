@@ -11,13 +11,7 @@ class Hit:
         self.pos: glm.vec3 = glm.vec3()  # position of intersect
         self.normal: glm.vec3 = glm.vec3()  # surface normal at point of contact
         self.delta: glm.vec3 = glm.vec3()  # overlap between two objects, vector to correct
-        self.time: float = 0.0  # fraction from 0 to 1 for segment / sweep indicating how far along line collision occured
-
-class Sweep:
-    def __init__(self):
-        self.hit: Hit = None  # hit object or None if no collision
-        self.pos: glm.vec3 = glm.vec3()  # furthest point object reached along swept path befor hit
-        self.time: float = 1.0  # copy of self.hit.time, offset by epsilon or 1 if object didn't hit anything during sweep
+        self.time: float = 0.0  # fraction from 0 to 1 for ray / sweep indicating how far along line collision occured
 
 
 class AABB:
@@ -30,15 +24,10 @@ class AABB:
 
 class Collider:
     hitRecall: dict[Collider, dict[Collider | glm.vec3, Hit]] = {}
-    sweepRecall: dict[Collider, dict[Collider | glm.vec3, Sweep]] = {}
-    def sweepAABB(self, box: AABB, delta: glm.vec3) -> Sweep:
-        pass
 
     def __init__(self):
         Collider.hitRecall[self] = {}
         self.hitRecall: dict[Collider | glm.vec3, Hit] = Collider.hitRecall[self]
-        Collider.sweepRecall[self] = {}
-        self.sweepRecall: dict[Collider | glm.vec3, Sweep] = Collider.sweepRecall[self]
 
     def recallHit(self, collider: Collider | glm.vec3) -> Hit | None:
         if self.hitRecall.get(collider):
@@ -47,6 +36,37 @@ class Collider:
     def recallSweep(self, collider: Collider | glm.vec3) -> Hit | None:
         if self.sweepRecall.get(collider):
             return self.sweepRecall.pop(collider)
+
+
+class Ray(Collider):
+    __create_key = object()
+
+    @classmethod
+    def _new(cls, origin: glm.vec3, size: glm.vec3):
+        return Ray(cls.__create_key, origin, size)
+
+    def __init__(self, create_key, origin: glm.vec3, dir: glm.vec3):
+        assert (create_key == Ray.__create_key), \
+            "Ray objects must be created using Ray._new"
+        super().__init__()
+        self.start: glm.vec3 = origin
+        self.dir: glm.vec3 = dir
+        self.invDir: glm.vec3 = 1.0 / dir
+        self.sign: glm.vec3 = glm.vec3([1 if i < 0 else 0 for i in self.invDir])
+        self.normal: glm.vec3 = glm.normalize(dir)
+        self.end: glm.vec3 = origin + dir
+
+    @classmethod
+    def from_start_end(cls, origin: glm.vec3, end: glm.vec3):
+        return cls._new(origin, end - origin)
+
+    @classmethod
+    def from_start_dir(cls, origin: glm.vec3, dir: glm.vec3 = glm.vec3(1.0)):
+        return cls._new(origin, dir)
+
+    def __str__(self):
+        return f"Ray(origin: {self.start}, dir: {self.dir}, normal: {self.normal}, end: {self.end})"
+
 
 class AABB(Collider):
     __create_key = object()
@@ -61,7 +81,17 @@ class AABB(Collider):
         super().__init__()
         self.pos: glm.vec3 = pos
         self.size: glm.vec3 = size
+        self._bounds: list[glm.vec3] = [self.min, self.max]
 
+    @classmethod
+    def from_min_max(cls, min: glm.vec3, max: glm.vec3):
+        size: glm.vec3 = max - min
+        pos: glm.vec3 = min + size / 2
+        return cls._new(pos, size)
+
+    @classmethod
+    def from_pos_size(cls, pos: glm.vec3, size: glm.vec3 = glm.vec3(1.0)):
+        return cls._new(pos, size)
 
     @property
     def half(self) -> glm.vec3:
@@ -75,166 +105,174 @@ class AABB(Collider):
     def max(self) -> glm.vec3:
         return self.pos + self.half
 
-    @classmethod
-    def from_min_max(cls, min: glm.vec3, max: glm.vec3):
-        size: glm.vec3 = max - min
-        pos: glm.vec3 = min + size / 2
-        return cls._new(pos, size)
-
-    @classmethod
-    def from_pos_size(cls, pos: glm.vec3, size: glm.vec3 = glm.vec3(1.0)):
-        return cls._new(pos, size)
-
     def does_overlap(self, overlap: glm.vec3) -> bool:
         return overlap.x > 0 and overlap.y > 0 and overlap.z > 0
 
     def intersectPoint(self, point: glm.vec3) -> Hit:
-        # Calculate the vector difference between the centers of the AABB and point
+        # Calculate the vector difference between the centers of the AABB and the point
         delta = point - self.pos
 
         # Determine the sign of the difference for each axis (direction of the collision)
         sign = glm.sign(delta)
 
         # Calculate the overlap on each axis by subtracting the absolute distance
-        # from the sum of the half-extents of the two boxes
+        # from the half-extents of the AABB
         overlap = self.half - glm.abs(delta)
 
         # Check if there is an intersection by verifying if all components of `overlap` are positive
         if self.does_overlap(overlap):
             hit = Hit(self)
-            if overlap.x < overlap.y and overlap.x < overlap.z:
+
+            if abs(overlap.x - overlap.y) < EPSILON and abs(overlap.x - overlap.z) < EPSILON:
+                # If all overlaps are nearly the same, default to the primary axis (e.g., x-axis)
                 hit.delta.x = overlap.x * sign.x
                 hit.normal.x = sign.x
-                hit.pos.x = self.pos.x + (self.half.x * sign.x)
-                hit.pos.y = point.y
-                hit.pos.z = point.z
-            elif overlap.y < overlap.z:
-                hit.delta.y = overlap.y * sign.y
-                hit.normal.y = sign.y
-                hit.pos.x = point.x
-                hit.pos.y = self.pos.y + (self.half.y * sign.y)
-                hit.pos.z = point.z
+                hit.pos = glm.vec3(self.pos.x + self.half.x * sign.x, point.y, point.z)
+            elif abs(overlap.x - overlap.y) < EPSILON:
+                # If x and y overlaps are similar, choose based on some rule (e.g., x-axis priority)
+                if overlap.x < overlap.z:
+                    hit.delta.x = overlap.x * sign.x
+                    hit.normal.x = sign.x
+                    hit.pos = glm.vec3(self.pos.x + self.half.x * sign.x, point.y, point.z)
+                else:
+                    hit.delta.z = overlap.z * sign.z
+                    hit.normal.z = sign.z
+                    hit.pos = glm.vec3(point.x, point.y, self.pos.z + self.half.z * sign.z)
+            elif abs(overlap.y - overlap.z) < EPSILON:
+                # If y and z overlaps are similar, choose based on some rule (e.g., y-axis priority)
+                if overlap.y < overlap.x:
+                    hit.delta.y = overlap.y * sign.y
+                    hit.normal.y = sign.y
+                    hit.pos = glm.vec3(point.x, self.pos.y + self.half.y * sign.y, point.z)
+                else:
+                    hit.delta.z = overlap.z * sign.z
+                    hit.normal.z = sign.z
+                    hit.pos = glm.vec3(point.x, point.y, self.pos.z + self.half.z * sign.z)
             else:
-                hit.delta.z = overlap.z * sign.z
-                hit.normal.z = sign.z
-                hit.pos.x = point.x
-                hit.pos.y = point.y
-                hit.pos.z = self.pos.z + (self.half.z * sign.z)
+                # General case: choose the axis with the smallest overlap
+                if overlap.x < overlap.y and overlap.x < overlap.z:
+                    hit.delta.x = overlap.x * sign.x
+                    hit.normal.x = sign.x
+                    hit.pos = glm.vec3(self.pos.x + self.half.x * sign.x, point.y, point.z)
+                elif overlap.y < overlap.z:
+                    hit.delta.y = overlap.y * sign.y
+                    hit.normal.y = sign.y
+                    hit.pos = glm.vec3(point.x, self.pos.y + self.half.y * sign.y, point.z)
+                else:
+                    hit.delta.z = overlap.z * sign.z
+                    hit.normal.z = sign.z
+                    hit.pos = glm.vec3(point.x, point.y, self.pos.z + self.half.z * sign.z)
+
+            # Store the result in the recall dictionary
             self.hitRecall[point] = hit
             return hit
 
-        # return None if no intersection
+        # Return None if no intersection
         return None
 
-    def intersectSegment(self, pos: glm.vec3, delta: glm.vec3, padding: glm.vec3() = glm.vec3()) -> list[Hit]:
-        scale = 1.0 / delta
-        sign = glm.sign(scale)
-        nearTime = (self.pos - sign * (self.half + padding) - pos) * scale
-        farTime = (self.pos + sign * (self.half + padding) - pos) * scale
+    def intersectSegment(self, ray: Ray) -> list[Hit] | None:
+        # X Axis
+        tMin = (self._bounds[int(ray.sign.x)].x - ray.start.x) * ray.invDir.x
+        tMax = (self._bounds[int(1 - ray.sign.x)].x - ray.start.x) * ray.invDir.x
 
-        if nearTime.x > farTime.x or nearTime.y > farTime.y or nearTime.z > farTime.z:
+        # Y Axis
+        min = (self._bounds[int(ray.sign.y)].y - ray.start.y) * ray.invDir.y
+        max = (self._bounds[int(1 - ray.sign.y)].y - ray.start.y) * ray.invDir.y
+
+        if max < tMin or min > tMax:
             return None
+        if min > tMin:
+            tMin = min
+        if max < tMax:
+            tMax = max
 
-        nTime = max(nearTime.x, nearTime.y, nearTime.z)
-        fTime = min(farTime.x, farTime.y, farTime.z)
+        # Z Axis
+        min = (self._bounds[int(ray.sign.z)].z - ray.start.z) * ray.invDir.z
+        max = (self._bounds[int(1 - ray.sign.z)].z - ray.start.z) * ray.invDir.z
 
-        if nTime >= 1 or fTime <= 0:
+        if max < tMin or min > tMax:
             return None
+        if min > tMin:
+            tMin = min
+        if max < tMax:
+            tMax = max
 
+        # No intersection if the ray is entirely outside the AABB
+        tMinMoreThanOne = tMin >= 1
+        tMaxLessThanZero = tMax <= 0
+        tMinGreaterThanMax = tMin > tMax
+        if tMinMoreThanOne or tMaxLessThanZero or tMinGreaterThanMax:
+            return None
+        # Calculate the hit points
         nearHit = Hit(self)
-        nearHit.time = clamp(nTime, 0, 1)
-        if nearTime.x > nearTime.y and nearTime.x > nearTime.z:
-            nearHit.normal.x = -sign.x
-        elif nearTime.y > nearTime.z:
-            nearHit.normal.y = -sign.y
-        else:
-            nearHit.normal.z = -sign.z
-        nearHit.delta = (1.0 - nearHit.time) * - delta
+        nearHit.time = clamp(tMin, 0, 1)
+
+        nearHit.delta = (1.0 - nearHit.time) * -ray.dir
+        nearHit.pos = ray.start + nearHit.time * ray.dir
 
         farHit = Hit(self)
-        farHit.time = clamp(fTime, 0, 1)
-        if nearTime.x < nearTime.y and nearTime.x < nearTime.z:
-            farHit.normal.x = sign.x
-        elif nearTime.y > nearTime.z:
-            farHit.normal.y = sign.y
-        else:
-            farHit.normal.z = sign.z
-        farHit.delta = (1.0 - farHit.time) * - delta
+        farHit.time = clamp(tMax, 0, 1)
 
-        self.hitRecall[nearTime] = nearHit
-        self.hitRecall[farTime] = farHit
+        farHit.delta = (1.0 - farHit.time) * -ray.dir
+        farHit.pos = ray.start + farHit.time * ray.dir
+
+        # Store and return the hits
+        self.hitRecall[ray] = [nearHit, farHit]
         return [nearHit, farHit]
 
     def intersectAABB(self, box: AABB) -> Hit:
-        # Calculate the vector difference between the centers of the two boxes
         delta = box.pos - self.pos
-
-        # Determine the sign of the difference for each axis (direction of the collision)
         sign = glm.sign(delta)
-
-        # Calculate the overlap on each axis by subtracting the absolute distance
-        # from the sum of the half-extents of the two boxes
         overlap = (box.half + self.half) - glm.abs(delta)
 
-        # Check if there is an intersection by verifying if all components of `overlap` are positive
         if self.does_overlap(overlap):
             hit = Hit(self)
-            if overlap.x < overlap.y and overlap.x < overlap.z:
+
+            if abs(overlap.x - overlap.y) < EPSILON and abs(overlap.x - overlap.z) < EPSILON:
+                # If all overlaps are nearly the same, default to a primary axis (e.g., x-axis)
                 hit.delta.x = overlap.x * sign.x
                 hit.normal.x = sign.x
-                hit.pos.x = self.pos.x + (self.half.x * sign.x)
-                hit.pos.y = box.pos.y
-                hit.pos.z = box.pos.z
-            elif overlap.y < overlap.z:
-                hit.delta.y = overlap.y * sign.y
-                hit.normal.y = sign.y
-                hit.pos.x = box.pos.x
-                hit.pos.y = self.pos.y + (self.half.y * sign.y)
-                hit.pos.z = box.pos.z
+                hit.pos = glm.vec3(self.pos.x + self.half.x * sign.x, box.pos.y, box.pos.z)
+            elif abs(overlap.x - overlap.y) < EPSILON:
+                # If x and y overlaps are similar, choose based on some rule (e.g., x-axis priority)
+                if overlap.x < overlap.z:
+                    hit.delta.x = overlap.x * sign.x
+                    hit.normal.x = sign.x
+                    hit.pos = glm.vec3(self.pos.x + self.half.x * sign.x, box.pos.y, box.pos.z)
+                else:
+                    hit.delta.z = overlap.z * sign.z
+                    hit.normal.z = sign.z
+                    hit.pos = glm.vec3(box.pos.x, box.pos.y, self.pos.z + self.half.z * sign.z)
+            elif abs(overlap.y - overlap.z) < EPSILON:
+                # If y and z overlaps are similar, choose based on some rule (e.g., y-axis priority)
+                if overlap.y < overlap.x:
+                    hit.delta.y = overlap.y * sign.y
+                    hit.normal.y = sign.y
+                    hit.pos = glm.vec3(box.pos.x, self.pos.y + self.half.y * sign.y, box.pos.z)
+                else:
+                    hit.delta.z = overlap.z * sign.z
+                    hit.normal.z = sign.z
+                    hit.pos = glm.vec3(box.pos.x, box.pos.y, self.pos.z + self.half.z * sign.z)
             else:
-                hit.delta.z = overlap.z * sign.z
-                hit.normal.z = sign.z
-                hit.pos.x = box.pos.x
-                hit.pos.y = box.pos.y
-                hit.pos.z = self.pos.z + (self.half.z * sign.z)
+                # General case: choose the axis with the smallest overlap
+                if overlap.x < overlap.y and overlap.x < overlap.z:
+                    hit.delta.x = overlap.x * sign.x
+                    hit.normal.x = sign.x
+                    hit.pos = glm.vec3(self.pos.x + self.half.x * sign.x, box.pos.y, box.pos.z)
+                elif overlap.y < overlap.z:
+                    hit.delta.y = overlap.y * sign.y
+                    hit.normal.y = sign.y
+                    hit.pos = glm.vec3(box.pos.x, self.pos.y + self.half.y * sign.y, box.pos.z)
+                else:
+                    hit.delta.z = overlap.z * sign.z
+                    hit.normal.z = sign.z
+                    hit.pos = glm.vec3(box.pos.x, box.pos.y, self.pos.z + self.half.z * sign.z)
+
+            # Store the result in the recall dictionary
             self.hitRecall[box] = hit
             return hit
 
-        # return None if no intersection
         return None
-
-    def sweepAABB(self, box: AABB, delta: glm.vec3) -> Sweep:
-        sweep = Sweep()
-        if glm.vec3() == 0:
-            sweep.pos = box.pos
-            sweep.hit = self.intersectAABB(box)
-            if sweep.hit:
-                sweep.hit.time = 0
-                sweep.time = 0
-            else:
-                sweep.time = 1
-            return sweep
-        sweep.hit = self.intersectSegment(box.pos, delta, box.half)
-        if sweep.hit:
-            sweep.time = clamp(sweep.hit.time - EPSILON, 0, 1)
-            sweep.pos = box.pos + delta * sweep.time
-            direction = glm.normalize(glm.vec3(delta))
-            sweep.hit.pos = glm.clamp(sweep.hit.pos + direction * box.half, self.pos - self.half,
-                                      self.pos + self.half)
-        else:
-            sweep.pos = box.pos + delta
-            sweep.time = 1
-        return sweep
-
-    def sweepInto(self, staticColliders: list[Collider], delta: glm.vec3) -> Sweep:
-        nearest = Sweep()
-        nearest.time = 1
-        nearest.pos = self.pos + delta
-        for staticCollider in staticColliders:
-            sweep = staticCollider.sweepAABB(self, delta)
-            if sweep.time < nearest.time:
-                nearest = sweep
-        return nearest
 
     def contains(self, box: AABB) -> bool:
         # Check if the entire 'box' is within the 'self' bounds
@@ -263,9 +301,6 @@ class Physical:
 
     def recallHit(self, collider: Collider | glm.vec3) -> Hit:
         return self._collider.recallHit(collider)
-
-    def recallSweep(self, collider: Collider | glm.vec3) -> Sweep:
-        return self._collider.recallSweep(collider)
 
 
 class PhysicalBox(Physical):
