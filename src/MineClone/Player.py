@@ -1,4 +1,5 @@
 import math
+import random
 
 import glm
 import numpy as np
@@ -20,7 +21,7 @@ _DAMPING_FACTOR: float = 0.99
 
 _PLAYER_WALK_SPEED: float = 2.0
 _PLAYER_SPRINT_SPEED: float = 1.5 * _PLAYER_WALK_SPEED
-_PLAYER_CROUSH_SPEED: float = 0.7 * _PLAYER_WALK_SPEED
+_PLAYER_CROUCH_SPEED: float = 0.7 * _PLAYER_WALK_SPEED
 
 _GRAVITY: float = -9.8
 _2X_FABS_GRAVITY: float = math.fabs(_GRAVITY)
@@ -48,17 +49,19 @@ class Player(PhysicalBox):
         # States
         self.isFlying = False
         self.isGrounded = False
+        self.isSprinting = False
+        self.isCrouching = False
 
-        self.boundMoveControls: list[Control] = []
-        for boundCtrl in GetBoundControls():
-            if boundCtrl.GetType() == CTRL.Type.MOVEMENT:
-                self.boundMoveControls.append(boundCtrl)
+        # cooldowns
+        self.attackCooldown = 0.0
+        self.interactCooldown = 0.0
 
         self.firstPersonCamera: bool = True
 
         self.collidingBlockPositions = None
 
         self.targetBlock: Block = None
+        self.targetFaceBlock: Block = BLOCK_NULL
         self.checkTargetBlock = True
         self.reachRadius = _PLAYER_REACH_RADIUS
         self.blockReach = glm.vec2(4.0, 3.0)
@@ -118,43 +121,83 @@ class Player(PhysicalBox):
     def crouch(self):
         pass
 
-    def handle_movement_input(self) -> None:
-        moveVector: glm.vec3 = glm.vec3()
-        for ctrl in self.boundMoveControls:
+    def handle_input(self):
+        self.moveVector: glm.vec3 = glm.vec3()
+        for ctrl in GetBoundControls():
             if ctrl.GetInputState().value:
-                id = ctrl.GetID()
-                if id.value < 4:
-                    direction = -1 if id.value % 2 else 1
-                    if id.value < 2:
-                        if self.isFlying:
-                            vectorMod: glm.vec3 = self.camFront
-                        else:
-                            vectorMod: glm.vec3 = glm.normalize(self.camFront)
-                            vectorMod.y = 0
-                    else:
-                        vectorMod: glm.vec3 = self.camera.Right
-                    moveVector += direction * vectorMod
-                else:
-                    direction = -1 if id.value % 2 else 1
-                    if self.isFlying:
-                        vectorMod: glm.vec3 = self.camera.WorldUp
-                        moveVector += direction * vectorMod
-                    else:
-                        if direction == -1:
-                            self.crouch()
-                        else:
-                            self.jump()
-
-        if 0 == moveVector.x:
+                ctrlType = ctrl.GetType()
+                if ctrlType == CTRL.Type.MOVEMENT:
+                    self.handle_movement_input(ctrl)
+                elif ctrlType == CTRL.Type.ACTION:
+                    self.handle_action_input(ctrl)
+        if 0 == self.moveVector.x:
             self.velocity.x = 0
         if self.isFlying:
-            if 0 == moveVector.y:
+            if 0 == self.moveVector.y:
                 self.velocity.y = 0
-        if 0 == moveVector.z:
+        if 0 == self.moveVector.z:
             self.velocity.z = 0
-        if np.sum(moveVector):
-            self.acceleration += moveVector * self.moveSpeed
+        if np.sum(self.moveVector):
+            self.acceleration += self.moveVector * self.moveSpeed
+        if self.attackCooldown > 0:
+            self.attackCooldown -= 1.0
+        if self.interactCooldown > 0:
+            self.interactCooldown -= 1.0
 
+    def handle_movement_input(self, ctrl: Control):
+        id = ctrl.GetID()
+        if id.value < 4:
+            direction = -1 if id.value % 2 else 1
+            if id.value < 2:
+                if self.isFlying:
+                    vectorMod: glm.vec3 = self.camFront
+                else:
+                    vectorMod: glm.vec3 = glm.normalize(self.camFront)
+                    vectorMod.y = 0
+            else:
+                vectorMod: glm.vec3 = self.camera.Right
+            self.moveVector += direction * vectorMod
+        else:
+            direction = -1 if id.value % 2 else 1
+            if self.isFlying:
+                vectorMod: glm.vec3 = self.camera.WorldUp
+                self.moveVector += direction * vectorMod
+            else:
+                if direction == -1:
+                    self.crouch()
+                else:
+                    self.jump()
+
+    def attack(self):
+        if not self.attackCooldown:
+            self.attackCooldown = 10.0
+            if self.targetBlock:
+                self.targetBlock.set(Block.ID.Null)
+
+    def interact(self):
+        if not self.interactCooldown:
+            self.interactCooldown = 10.0
+            if self.targetFaceBlock != BLOCK_NULL:
+                self.targetFaceBlock.set(Block.ID(random.randrange(1, len(Block.ID))))
+
+    def handle_action_input(self, ctrl: Control):
+        id = ctrl.GetID()
+        if id == CTRL.ID.Action.SPRINT:
+            if ctrl.GetInputState() == Input.State.RELEASE:
+                if self.isSprinting:
+                    self.isSprinting = False
+                    if self.isCrouching:
+                        self.moveSpeed = _PLAYER_CROUCH_SPEED
+                    else:
+                        self.moveSpeed = _PLAYER_WALK_SPEED
+            else:
+                if not self.isSprinting and not self.isCrouching:
+                    self.isSprinting = True
+                    self.moveSpeed = True
+        elif id == CTRL.ID.Action.ATTACK:
+            self.attack()
+        elif id == CTRL.ID.Action.INTERACT:
+            self.interact()
     def handle_collision(self):
         # Get colliding blocks within the current bounds
         collidingBlocks: set[Block] = self.world.query_aabb_blocks(self.bounds)
@@ -252,15 +295,11 @@ class Player(PhysicalBox):
 
         self.acceleration = glm.vec3()
 
-    cnt = 2
     def update(self, deltaTime: float):
-        if self.cnt:
-            self.cnt -= 1
-            return
         if not self.isFlying:
             if not self.isGrounded:
                 self.apply_gravity()
-        self.handle_movement_input()
+        self.handle_input()
         self.move(deltaTime)
 
         self.acquireTargetBlock()
@@ -300,9 +339,8 @@ class Player(PhysicalBox):
             farBest = min(farBest, farHit.time)
 
             self.targetBlock = block
-        # TODO: target block face calculation
-
-
+        if self.targetBlock:
+            self.targetFaceBlock = self.targetBlock.get_adjblock_at_segment_intersect(ray.start + ray.normal * nearBest)
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
         if not self.firstPersonCamera:

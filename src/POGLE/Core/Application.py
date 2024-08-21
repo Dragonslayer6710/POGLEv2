@@ -114,7 +114,8 @@ class Application:
         while self._Running:
             time = self._Window.get_time()
             deltaTime = time - self._LastFrameTime
-
+            refreshRate = glfwGetVideoMode(self._Window.get_monitor()).refresh_rate
+            deltaTime = clamp(deltaTime, 0, 1/refreshRate*2)
             self._Window.show_fps(time, deltaTime)
 
             self._LastFrameTime = time

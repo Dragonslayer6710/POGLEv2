@@ -86,7 +86,7 @@ class WorldRenderer:
                         zAxis[-1].neighbourChunks[Chunk.Cardinal.North]
                     ) if zAxis[-1].is_chunk else zAxis.append(CHUNK_NULL) for zAxis in self.renderedChunks
                 ]
-        self._set_instance_data()
+        self.set_instance_data()
 
     def _set_render_distance(self, renderDistance: int):
         self.renderDistance = renderDistance
@@ -96,9 +96,9 @@ class WorldRenderer:
     def _build_rendered_chunks(self):
         self.renderedChunks = [[CHUNK_NULL for i in range(self._chunksInRow)] for j in range(self._chunksInRow)]
         self.originChunk.get_chunks_to_render(self.renderedChunks, self._chunksInRow)
-        self._set_instance_data()
+        self.set_instance_data()
 
-    def _set_instance_data(self):
+    def set_instance_data(self):
         self.chunk_instances = []
         for chunkRow in self.renderedChunks:
             for chunk in chunkRow:

@@ -91,7 +91,6 @@ class Block(PhysicalBox):
                 side: self.chunk.get_block(self.pos + offset) for side, offset in self.adjBlockOffsets.items()
             }
 
-
     def set(self, id: ID):
         self.blockID: Block.ID = id
         self.is_block = self.blockID != Block.ID.Null
@@ -99,14 +98,20 @@ class Block(PhysicalBox):
         self.is_transparent = self.blockID in Block.transparentBlocks
         self.update_face_textures()
         if was_transparent != self.is_transparent:
-            for block in self.adjBlocks.values(): block.update_side_visibility()
+            for block in self.adjBlocks.values():
+                if block != BLOCK_NULL:
+                    if block.update_side_visibility():
+                        block.chunk.set_block_instance(block)
+        self.chunk.set_block(self.chunkBlockID, self.blockID)
 
 
     def update_face_textures(self):
         for i in range(6):
-            texDims = Block._TextureAtlas.get_sub_texture(self.blockNets[self.blockID][i].value)
-            face_instance = self.face_instances[i]
-            face_instance[:4] = [*texDims.pos, *texDims.size]
+            if self.blockID is not Block.ID.Null:
+                texDims = Block._TextureAtlas.get_sub_texture(self.blockNets[self.blockID][i].value)
+                self.face_instances[i][:4] = [*texDims.pos, *texDims.size]
+            else:
+                self.face_instances[i][:4] = [*glm.vec2(), *glm.vec2()]
 
     def update_side_visibility(self) -> bool:
         updated = False
@@ -133,6 +138,21 @@ class Block(PhysicalBox):
 
     def reveal_face(self, side: Side):
         self.edit_side_state(side, True)
+
+    def get_adjblock_at_segment_intersect(self, segmentIntersect):
+        offset: glm.vec3 = glm.round(segmentIntersect - self.pos)
+        if offset.x > 0:
+            return self.adjBlocks[Block.Side.East]
+        elif offset.x < 0:
+            return self.adjBlocks[Block.Side.West]
+        elif offset.y > 0:
+            return self.adjBlocks[Block.Side.Top]
+        elif offset.y < 0:
+            return self.adjBlocks[Block.Side.Bottom]
+        elif offset.z < 0:
+            return self.adjBlocks[Block.Side.North]
+        else:
+            return self.adjBlocks[Block.Side.South]
 
     def get_face_instance_data(self) -> np.ndarray:
         if self.is_block:

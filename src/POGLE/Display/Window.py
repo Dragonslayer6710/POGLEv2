@@ -1,3 +1,4 @@
+import glfw
 from glfw.GLFW import *
 from glfw import _GLFWwindow as GLFWwindow
 
@@ -66,6 +67,19 @@ class Window:
 
     def __del__(self):
         self._Shutdown()
+
+    def get_monitor(self):
+        winX, winY = glfwGetWindowPos(self._Window)
+        monitors = glfwGetMonitors()
+
+        for i in range(len(monitors)):
+            monX, monY = glfwGetMonitorPos(monitors[i])
+            mode = glfwGetVideoMode(monitors[i])
+            monW, monH = mode.size
+
+            if winX >= monX and winX < (monX + monW) and winY >= monY and winY < monY + (monY + monH):
+                return monitors[i]
+
 
     def on_update(self):
         glfwPollEvents()

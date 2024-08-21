@@ -5,16 +5,7 @@ class Game:
     def __init__(self):
         self.world: World = World()
         self.world.update()
-        start_pos = glm.vec3(0,5.12,0)
-        end_pos = glm.vec3(-0.837441,0.620986,-0.0432235)
-        ray = Ray.from_start_end(start_pos, end_pos)
-        print(ray)
-        hitBlocks: set[Block] = self.world.query_segment_blocks(ray)
-        for block in hitBlocks:
-            nearHit, farHit = block.bounds.intersectSegment(ray)
-            print(f"Near: {nearHit.time}, Far: {farHit.time}")
-        print("[\n\t"+",\n\t".join([str(block) for block in hitBlocks])+"\n]")
-        #quit()
+
         self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
         self.player: Player = Player(self.world, glm.vec3(0,5,0))
 
@@ -26,6 +17,8 @@ class Game:
 
     def update(self, deltaTime: float):
         self.player.update(deltaTime)
+        if self.world.run_partial_update():
+            self.worldRenderer.set_instance_data()
         self.worldRenderer.update_origin(self.player.pos)
 
 
