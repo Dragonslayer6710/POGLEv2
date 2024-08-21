@@ -1,9 +1,17 @@
+import os.path
+
 from MineClone.WorldRenderer import *
 from MineClone.Player import *
 
 class Game:
     def __init__(self):
-        self.world: World = World()
+        if os.path.exists("worldFile.bin"):
+            with open("worldfile.bin", "rb") as f:
+                self.world: World = World.deserialize(f.read())
+        else:
+            self.world: World = World()
+        with open("worldfile.bin","wb") as f:
+            f.write(self.world.serialize())
         self.world.update()
 
         self.worldRenderer: WorldRenderer = WorldRenderer(self.world)

@@ -94,7 +94,7 @@ class WorldRenderer:
         self._build_rendered_chunks()
 
     def _build_rendered_chunks(self):
-        self.renderedChunks = [[CHUNK_NULL for i in range(self._chunksInRow)] for j in range(self._chunksInRow)]
+        self.renderedChunks = [[None for i in range(self._chunksInRow)] for j in range(self._chunksInRow)]
         self.originChunk.get_chunks_to_render(self.renderedChunks, self._chunksInRow)
         self.set_instance_data()
 

@@ -10,6 +10,7 @@ from enum import Enum
 from collections import deque
 
 from typing import Tuple
+import struct
 def clamp(n, min, max):
     if n < min:
         return min

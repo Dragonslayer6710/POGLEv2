@@ -1,5 +1,6 @@
 import copy
 import os.path
+import struct
 
 from MineClone.Chunk import *
 from MineClone.Chunk import _BLOCKS_IN_CHUNK, _QUADS_IN_CHUNK, _CHUNK_HEIGHT, _CHUNK_WIDTH, _CHUNK_SIZE
@@ -30,22 +31,32 @@ class World(PhysicalBox):
     def _get_world_chunk_id(self, x: int, z: int) -> int:
         return x * _CHUNKS_IN_ROW + z
 
-    def __init__(self):
+    def __init__(self, chunks: list[Chunk] = None):
         self.bounds = AABB.from_pos_size(_WORLD_MID_POINT, _WORLD_SIZE + glm.vec3(1))
-        self.chunks = copy.deepcopy(World.chunks)
+        if not chunks:
+            self.chunks = copy.deepcopy(World.chunks)
         self.not_empty_chunks: list[Chunk] = copy.deepcopy(self.chunk_instances)
         self.worldWidth = len(_WORLD_CHUNK_RANGE)
         self.chunks_needing_update: set[Chunk] = set()
 
         self.quadtree: QuadTree = QuadTree.XZ(self.bounds, _CHUNK_SIZE + glm.vec3(1))
-        for x in range(self.worldWidth):
-            for z in range(self.worldWidth):
-                chunkIndex = self._get_world_chunk_id(x, z)
-                chunk = self.chunks[chunkIndex]
-                worldChunkID = chunkIndex
+        if chunks:
+            self.chunks = chunks
+            for chunk in chunks:
+                x, z = (int(i) for i in chunk.worldChunkPos + _WORLD_CHUNK_AXIS_LENGTH)
+                worldChunkID = self._get_world_chunk_id(x,z)
                 chunk.init(self, worldChunkID)
                 self.quadtree.insert(chunk)
                 self.not_empty_chunks[worldChunkID] = chunk
+        else:
+            for x in range(self.worldWidth):
+                for z in range(self.worldWidth):
+                    chunkIndex = self._get_world_chunk_id(x, z)
+                    chunk = self.chunks[chunkIndex]
+                    worldChunkID = chunkIndex
+                    chunk.init(self, worldChunkID)
+                    self.quadtree.insert(chunk)
+                    self.not_empty_chunks[worldChunkID] = chunk
 
     def query_aabb_chunks(self, boxRange: AABB) -> set[Chunk]:
         return self.quadtree.query_aabb(boxRange)
@@ -70,7 +81,7 @@ class World(PhysicalBox):
 
     def get_chunk_from_world_chunk_pos(self, worldChunkPos: glm.vec2) -> Chunk:
         if worldChunkPos[0] not in _WORLD_CHUNK_RANGE or worldChunkPos[1] not in _WORLD_CHUNK_RANGE:
-            return CHUNK_NULL
+            return None
         x, z = [int(i) for i in worldChunkPos + _WORLD_CHUNK_AXIS_LENGTH]
         return self._get_chunk(x, z)
 
@@ -103,3 +114,61 @@ class World(PhysicalBox):
         if not chunk_instances:
             return None
         return np.concatenate(chunk_instances, dtype=chunk_instances[0].dtype)
+
+    def serialize(self) -> bytes:
+        # Serialize all chunks into a single byte string
+        serialized_chunks = b"".join([chunk.serialize() for chunk in self.chunks])
+
+        # Pack the number of chunks (unsigned int)
+        num_chunks_data = struct.pack('I', len(self.chunks))
+
+        # Pack the size of each chunk's data and the chunk data itself
+        chunk_data = b""
+        for chunk in self.chunks:
+            chunk_serialized = chunk.serialize()
+            # Pack the size of the chunk's serialized data (unsigned int)
+            chunk_size = struct.pack('I', len(chunk_serialized))
+            # Append the size and the chunk's serialized data
+            chunk_data += chunk_size + chunk_serialized
+
+        return num_chunks_data + chunk_data
+
+    @classmethod
+    def deserialize(cls, binary_data: bytes):
+        # Ensure there is enough data for the initial unpack of the number of chunks
+        if len(binary_data) < 4:
+            raise ValueError("Insufficient data to read the number of chunks")
+
+        # Unpack the number of chunks (unsigned int)
+        num_chunks = struct.unpack("I", binary_data[:4])[0]
+        chunks = []
+        offset = 4  # Initial offset after the number of chunks
+
+        for _ in range(num_chunks):
+            # Ensure there is enough data to read the size of the next chunk
+            if offset + 4 > len(binary_data):
+                raise ValueError("Insufficient data to read chunk size")
+
+            # Read the size of the next chunk's data (unsigned int)
+            chunk_size = struct.unpack('I', binary_data[offset:offset + 4])[0]
+            offset += 4  # Move past the chunk size
+
+            # Ensure there is enough data to read the complete chunk
+            if offset + chunk_size > len(binary_data):
+                raise ValueError(
+                    f"Insufficient data to read the complete chunk. Expected size: {chunk_size}, available data: {len(binary_data) - offset}")
+
+            # Extract the chunk's data
+            chunk_data = binary_data[offset:offset + chunk_size]
+
+            # Deserialize the chunk
+            try:
+                chunks.append(Chunk.deserialize(chunk_data))
+            except Exception as e:
+                raise ValueError(f"Error deserializing chunk: {e}")
+
+            # Update offset for the next chunk
+            offset += chunk_size
+
+        # Return an instance of the class initialized with the deserialized chunks
+        return cls(chunks)

@@ -61,7 +61,7 @@ class Player(PhysicalBox):
         self.collidingBlockPositions = None
 
         self.targetBlock: Block = None
-        self.targetFaceBlock: Block = BLOCK_NULL
+        self.targetFaceBlockSpace: Block = None
         self.checkTargetBlock = True
         self.reachRadius = _PLAYER_REACH_RADIUS
         self.blockReach = glm.vec2(4.0, 3.0)
@@ -177,8 +177,9 @@ class Player(PhysicalBox):
     def interact(self):
         if not self.interactCooldown:
             self.interactCooldown = 10.0
-            if self.targetFaceBlock != BLOCK_NULL:
-                self.targetFaceBlock.set(Block.ID(random.randrange(1, len(Block.ID))))
+            if self.targetFaceBlockSpace:
+                if not self.targetFaceBlockSpace.is_block:
+                    self.targetFaceBlockSpace.set(Block.ID(random.randrange(1, len(Block.ID))))
 
     def handle_action_input(self, ctrl: Control):
         id = ctrl.GetID()
@@ -312,7 +313,7 @@ class Player(PhysicalBox):
         self.targetBlock = None
         nearBest = np.inf
         farBest = np.inf
-
+        nearPos: glm.vec3 = None
         hitBlocks: set[Block] = self.world.query_segment_blocks(ray)
         for block in hitBlocks:
             hits: Tuple[Hit, Hit] = block.recallHit(ray)
@@ -338,9 +339,13 @@ class Player(PhysicalBox):
             nearBest = min(nearBest, nearHit.time)
             farBest = min(farBest, farHit.time)
 
+            nearPos = nearHit.pos
             self.targetBlock = block
         if self.targetBlock:
-            self.targetFaceBlock = self.targetBlock.get_adjblock_at_segment_intersect(ray.start + ray.normal * nearBest)
+            space = self.targetBlock.get_adjblock_at_segment_intersect(nearPos)
+            if space:
+                if not space.is_block:
+                    self.targetFaceBlockSpace = space
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
         if not self.firstPersonCamera:

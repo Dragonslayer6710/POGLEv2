@@ -1,3 +1,5 @@
+import struct
+
 from POGLE.Core.Application import *
 from POGLE.Physics.SpatialTree import *
 from POGLE.Renderer.Mesh import WireframeCubeMesh
@@ -66,7 +68,7 @@ class Block(PhysicalBox):
                 Block.Side.Top: True,
                 Block.Side.Bottom: True
             }
-        self.blockID: int = id
+        self.blockID: Block.ID = id
         self.is_block: bool = self.blockID != Block.ID.Null
         self.is_transparent: bool = self.blockID in Block.transparentBlocks
         self.initialised: bool = False
@@ -80,26 +82,27 @@ class Block(PhysicalBox):
         self.blockID: Block.ID = id
         self.is_block = self.blockID != Block.ID.Null
         self.is_transparent = self.blockID in Block.transparentBlocks
+        texQuadCube = TexQuadCube(NMM(self.pos), glm.vec2(), glm.vec2())
         if self.is_block:
-            texQuadCube = TexQuadCube(NMM(self.pos), glm.vec2(), glm.vec2())
             if None == Block._TextureAtlas:
                 Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
                 Block.vertices = texQuadCube.vertices
-            self.face_instances: list[np.ndarray] = split_array(texQuadCube.instances.data, 6)
-            self.update_face_textures()
-            self.adjBlocks: dict[Block.Side, Block] = {
-                side: self.chunk.get_block(self.pos + offset) for side, offset in self.adjBlockOffsets.items()
-            }
+        self.face_instances: list[np.ndarray] = split_array(texQuadCube.instances.data, 6)
+        self.update_face_textures()
+        self.adjBlocks: dict[Block.Side, Block] = {
+            side: self.chunk.get_block(self.pos + offset) for side, offset in self.adjBlockOffsets.items()
+        }
 
     def set(self, id: ID):
         self.blockID: Block.ID = id
         self.is_block = self.blockID != Block.ID.Null
         was_transparent = self.is_transparent
         self.is_transparent = self.blockID in Block.transparentBlocks
+        self.update_side_visibility()
         self.update_face_textures()
         if was_transparent != self.is_transparent:
             for block in self.adjBlocks.values():
-                if block != BLOCK_NULL:
+                if block:
                     if block.update_side_visibility():
                         block.chunk.set_block_instance(block)
         self.chunk.set_block(self.chunkBlockID, self.blockID)
@@ -111,13 +114,17 @@ class Block(PhysicalBox):
                 texDims = Block._TextureAtlas.get_sub_texture(self.blockNets[self.blockID][i].value)
                 self.face_instances[i][:4] = [*texDims.pos, *texDims.size]
             else:
-                self.face_instances[i][:4] = [*glm.vec2(), *glm.vec2()]
+                self.face_instances[i][:4] = [0.0 for i in range(4)]
 
     def update_side_visibility(self) -> bool:
         updated = False
         if self.is_block:
             for side, adjBlock in self.adjBlocks.items():
-                if self.face_visible(side):
+                if not adjBlock:
+                    self.reveal_face(side)
+                    updated = True
+                    continue
+                elif self.face_visible(side) and adjBlock:
                     if not adjBlock.is_transparent:
                         self.hide_face(side)
                         updated = True
@@ -139,17 +146,16 @@ class Block(PhysicalBox):
     def reveal_face(self, side: Side):
         self.edit_side_state(side, True)
 
-    def get_adjblock_at_segment_intersect(self, segmentIntersect):
-        offset: glm.vec3 = glm.round(segmentIntersect - self.pos)
-        if offset.x > 0:
+    def get_adjblock_at_segment_intersect(self, intersect: glm.vec3):
+        if intersect.x == self.max.x:
             return self.adjBlocks[Block.Side.East]
-        elif offset.x < 0:
+        elif intersect.x == self.min.x:
             return self.adjBlocks[Block.Side.West]
-        elif offset.y > 0:
+        elif intersect.y == self.max.y:
             return self.adjBlocks[Block.Side.Top]
-        elif offset.y < 0:
+        elif intersect.y == self.min.y:
             return self.adjBlocks[Block.Side.Bottom]
-        elif offset.z < 0:
+        elif intersect.z == self.min.z:
             return self.adjBlocks[Block.Side.North]
         else:
             return self.adjBlocks[Block.Side.South]
@@ -185,4 +191,15 @@ class Block(PhysicalBox):
 
     def __str__(self):
         return f"Block(id: {self.blockID}, pos: {self.pos})"
-BLOCK_NULL = Block(None)
+
+    def serialize(self) -> bytes:
+        # Pack the chunkBlockPos (3 floats) and blockID (int) into bytes
+        return struct.pack("fffI", self.chunkBlockPos.x, self.chunkBlockPos.y, self.chunkBlockPos.z, self.blockID.value)
+
+    @classmethod
+    def deserialize(cls, binary_data: bytes):
+        # Unpack 3 floats and 1 unsigned int (the block ID) from the binary data
+        x, y, z, blockID = struct.unpack("fffI", binary_data)
+
+        # Create a new instance of Block with the deserialized data
+        return cls(glm.vec3(x, y, z), Block.ID(blockID))

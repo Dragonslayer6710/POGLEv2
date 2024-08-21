@@ -1,4 +1,6 @@
 import copy
+import struct
+
 from MineClone.Block import *
 from MineClone.Block import _QUADS_IN_BLOCK
 
@@ -48,10 +50,13 @@ class Chunk(PhysicalBox):
     def _get_chunk_block_id(self, x: int, y: int, z: int) -> int:
         return x * _CHUNK_WIDTH * _CHUNK_HEIGHT + y * _CHUNK_WIDTH + z
 
-    def __init__(self, worldChunkPos: glm.vec2):
+    def __init__(self, worldChunkPos: glm.vec2, blocks: list[Block] = None):
         super().__init__()
         if worldChunkPos is not None:
-            self.blocks = copy.deepcopy(Chunk.blocks)
+            if blocks == None:
+                self.blocks = copy.deepcopy(Chunk.blocks)
+            else:
+                self.blocks = blocks
             self.block_instances = copy.deepcopy(Chunk.block_instances)
             self.not_null_blocks = copy.deepcopy(Chunk.block_instances)
             self.num_not_null_blocks = 0
@@ -114,7 +119,7 @@ class Chunk(PhysicalBox):
         chunkBlockX, chunkBlockY, chunkBlockZ = [int(i) for i in chunkBlockPos]
 
         if chunkBlockY not in range(_CHUNK_HEIGHT):
-            return BLOCK_NULL
+            return None
         xOutOfRange, zOutOfRange = chunkBlockX not in range(_CHUNK_WIDTH), chunkBlockZ not in range(_CHUNK_WIDTH)
         if xOutOfRange or zOutOfRange:
             if xOutOfRange:
@@ -128,10 +133,9 @@ class Chunk(PhysicalBox):
                 else:
                     cardinalDir: Chunk.Cardinal = Chunk.Cardinal.North
             chunk: Chunk = self.neighbourChunks[cardinalDir]
-            if CHUNK_NULL == chunk:
-                return BLOCK_NULL
-            else:
+            if chunk:
                 return chunk.get_block(worldBlockPos)
+            return None
         else:
             return self._get_block(chunkBlockX, chunkBlockY, chunkBlockZ)
 
@@ -207,5 +211,43 @@ class Chunk(PhysicalBox):
             del Chunk._currentDepth
             del Chunk._num_chunks_to_visit
 
+    def serialize(self) -> bytes:
+        # Serialize all blocks into a single byte string
+        serialized_blocks = b"".join([block.serialize() for block in self.blocks])
 
-CHUNK_NULL = Chunk(None)
+        # Pack the number of blocks (unsigned int), worldChunkPos (two floats), and serialized blocks
+        return (
+                struct.pack("I", len(self.blocks)) +  # Number of blocks
+                struct.pack("ff", *self.worldChunkPos) +  # World chunk position (two floats)
+                serialized_blocks  # Serialized blocks data
+        )
+
+    @classmethod
+    def deserialize(cls, binary_data: bytes):
+        # Ensure there is enough data for the initial unpack of the number of blocks
+        if len(binary_data) < 8:  # 4 bytes for the number of blocks + 4 bytes for two floats
+            raise ValueError("Insufficient data to read the number of blocks and worldChunkPos")
+
+        # Unpack the number of blocks (unsigned int)
+        num_blocks = struct.unpack("I", binary_data[:4])[0]
+
+        # Unpack the worldChunkPos (two floats)
+        world_chunk_pos = glm.vec2(struct.unpack("ff", binary_data[4:12]))
+
+        blocks = []
+        offset = 12  # Initial offset after the number of blocks and worldChunkPos
+
+        block_size = struct.calcsize("fffi")  # Assuming block size is 16 bytes (4 bytes for each float and int)
+
+        for _ in range(num_blocks):
+            # Ensure there is enough data to read the next block
+            if offset + block_size > len(binary_data):
+                raise ValueError(f"Insufficient data to read block {_ + 1}")
+
+            # Extract each block's binary data and deserialize it
+            block_data = binary_data[offset:offset + block_size]
+            blocks.append(Block.deserialize(block_data))
+            offset += block_size
+
+        # Return an instance of the class initialized with the deserialized data
+        return cls(world_chunk_pos, blocks)
