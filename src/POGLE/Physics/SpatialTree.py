@@ -109,6 +109,71 @@ class SpatialTree:
             assert "some objects were not moved when subdividing"
         node.clear_objects()
 
+    def remove(self, obj: PhysicalBox, node: Node = None) -> bool:
+        """
+        Remove an object from the tree.
+
+        :param obj: The PhysicalBox object to remove.
+        :param node: The node to start the removal from, defaults to the root.
+        :return: True if the object was removed, False if the object was not found.
+        """
+        if node is None:
+            node = self.root
+
+        if not node.intersect_aabb(obj.bounds):
+            return False # Object does not intersect with this node
+
+        # handle non-subdivided nodes
+        if not node.activeNodes:
+            if obj in node.objects:
+                node.objects.remove(obj)
+                return True
+            return False # Object not found in this node
+
+        # Node is subdivided, attempt to remove from children
+        removed = False
+        for i in range(self.divisions):
+            child = node.childNodes[i]
+            if child and node.is_node_active(i):
+                removed |= self.remove(obj, child)
+
+        # If an object was removed, check if we can collapse the node
+        if removed and self.can_collapse(node):
+            self.collapse(node)
+
+        return removed
+
+    def can_collapse(self, node: Node) -> bool:
+        """
+        Determine if a node can collapse, i.e., all its children are empty.
+
+        :param node: The node to check.
+        :return: True if the node can collapse, False otherwise.
+        """
+        for i in range(self.divisions):
+            child = node.childNodes[i]
+            if node.is_node_active(i) and child:
+                # Recursively check if child can collapse and is empty
+                if not child.is_empty() or not self.can_collapse(child):
+                    return False
+        return True
+
+    def collapse(self, node: Node):
+        """
+        Collapse a node by moving all objects from its children back to the node and deactivating the children.
+
+        :param node: The node to collapse.
+        """
+        for i in range(self.divisions):
+            if node.is_node_active(i):
+                child = node.childNodes[i]
+                if child:
+                    node.objects.extend(child.objects)
+                    child.clear_objects()
+                    node.childNodes[i] = None  # Clear the reference to the child node
+                    node.clear_active_node(i) # Clear the active node bit
+
+
     def query_aabb(self, boxRange: AABB, result: set[PhysicalBox] = None, node: Node = None) -> set[PhysicalBox]:
         if node is None:
             if result is None:
@@ -116,20 +181,22 @@ class SpatialTree:
             self.query_aabb(boxRange, result, self.root)
             return result
         else:
-            if not node.intersect_aabb(boxRange):  # no intersection between range and node so exit now
-                return
+            if not node.intersect_aabb(boxRange):  # no intersection, stop recursion
+                return result
 
+            # add objects that intersect the aabb
             if not node.activeNodes:  # node is not subdivided
                 for obj in node.objects:
                     if obj.bounds.intersectAABB(boxRange):
                         result.add(obj)
-                return
+                return result
 
-            # node is subdivided
+            # node is subdivided; recursively query child nodes
             for i in range(node.divisions):
-                if node.is_node_active(i):
-                    self.query_aabb(boxRange, result, node.childNodes[i])
-            return
+                child = node.childNodes[i]
+                if child and node.is_node_active(i):
+                    self.query_aabb(boxRange, result, child)
+            return result
 
     def query_segment(self, ray: Ray, result: set[PhysicalBox] = None, node: Node = None) -> set[PhysicalBox]:
         if node is None:
@@ -139,19 +206,20 @@ class SpatialTree:
             return result
         else:
             if not node.intersect_segment(ray):  # no intersection between range and node so exit now
-                return
+                return result
 
             if not node.activeNodes:  # node is not subdivided
                 for obj in node.objects:
                     if obj.bounds.intersectSegment(ray):
                         result.add(obj)
-                return
+                return result
 
             # node is subdivided
             for i in range(node.divisions):
-                if node.is_node_active(i):
-                    self.query_segment(ray, result, node.childNodes[i])
-            return
+                child = node.childNodes[i]
+                if child and node.is_node_active(i):
+                    self.query_segment(ray, result, child)
+            return result
 
 class Octree(SpatialTree):
     def __init__(self, bounds: AABB, minSize: glm.vec3 = glm.vec3(1)):

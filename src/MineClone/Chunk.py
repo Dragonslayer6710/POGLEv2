@@ -14,10 +14,6 @@ _QUADS_IN_CHUNK = _QUADS_IN_BLOCK * _BLOCKS_IN_CHUNK
 
 
 class Chunk(PhysicalBox):
-    class ID(Enum):
-        Null = 0
-        Valid = auto()
-
     class Cardinal(Enum):
         West = 0
         SouthWest = auto()
@@ -27,12 +23,6 @@ class Chunk(PhysicalBox):
         NorthEast = auto()
         North = auto()
         NorthWest = auto()
-
-    chunkID: ID = ID.Null
-
-    blocks: list[Block] = [Block(glm.vec3(x, y, z)) for x in range(_CHUNK_WIDTH)
-                                                       for y in range(_CHUNK_HEIGHT)
-                                                       for z in range(_CHUNK_WIDTH)]
 
     block_instances: list[np.ndarray] = [None] * _BLOCKS_IN_CHUNK
 
@@ -46,60 +36,116 @@ class Chunk(PhysicalBox):
         Cardinal.North: glm.vec2(0, 1),
         Cardinal.NorthWest: glm.vec2(1, -1),
     }
+    solid_blocks: list[int | None] = [None for i in range(_CHUNK_WIDTH ** 2 * _CHUNK_HEIGHT)]
 
-    def _get_chunk_block_id(self, x: int, y: int, z: int) -> int:
-        return x * _CHUNK_WIDTH * _CHUNK_HEIGHT + y * _CHUNK_WIDTH + z
+    # World chunk position in world vec2 from position in world
+    # (worldPos.x/z = -inf to inf)
+    @staticmethod
+    def pos_from_world_pos(worldPos: glm.vec3) -> glm.vec2:
+        return worldPos.xz // _CHUNK_WIDTH
 
-    def __init__(self, worldChunkPos: glm.vec2, blocks: list[Block] = None):
+    @staticmethod
+    def block_id_from_chunk_block_pos(x: int | glm.vec3, y: int = None, z: int = None) -> int:
+        if type(x) == glm.vec3:
+            x, y, z = x
+        return int(x * _CHUNK_WIDTH * _CHUNK_HEIGHT + y * _CHUNK_WIDTH + z)
+
+    def __init__(self, chunk_array_offset: glm.vec2, blocks: list[Block] = None):
+        from MineClone.World import World
+        from MineClone.World import _WORLD_CHUNK_AXIS_LENGTH
         super().__init__()
-        if worldChunkPos is not None:
-            if blocks == None:
-                self.blocks = copy.deepcopy(Chunk.blocks)
-            else:
-                self.blocks = blocks
-            self.block_instances = copy.deepcopy(Chunk.block_instances)
-            self.not_null_blocks = copy.deepcopy(Chunk.block_instances)
-            self.num_not_null_blocks = 0
-            self.chunkID = Chunk.ID.Valid
-            self.worldChunkPos: glm.vec2 = worldChunkPos
-            self._neighbourPos: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.worldChunkPos for k, v in
-                                                                  Chunk.neighbourOffsets.items()}
-            self.worldChunkBlockPos: glm.vec3 = glm.vec3(worldChunkPos[0], 0, worldChunkPos[1]) * _CHUNK_WIDTH
-            self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE + glm.vec3(1))
+        self._blocks: list[Block] = []
+        self.solid_blocks: list[int | None] = copy.deepcopy(Chunk.solid_blocks)
 
-        self.is_chunk: bool = self.chunkID == Chunk.ID.Valid
+        self.block_instances = copy.deepcopy(Chunk.block_instances)
+        self.num_solid_blocks = 0
 
+        self.normal_chunk_pos: glm.vec2 = chunk_array_offset
+        self.chunk_pos: glm.vec2 = chunk_array_offset - _WORLD_CHUNK_AXIS_LENGTH
+        self.chunk_id: int = World.chunk_id_from_chunk_array_offset(self.normal_chunk_pos)
+        self.world: World | None = None
+
+        self._neighbourChunkCache: dict[Chunk.Cardinal, Chunk | None] = {}
+        self.neighbourPositions: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.normal_chunk_pos for k, v in
+                                                                   Chunk.neighbourOffsets.items()}
+        self.worldChunkBlockPos: glm.vec3 = glm.vec3(self.chunk_pos[0], 0, self.chunk_pos[1]) * _CHUNK_WIDTH
+        self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE + glm.vec3(1))
+        self.octree: SpatialTree = Octree(self.bounds)
+        if not blocks:
+            for x in range(_CHUNK_WIDTH):
+                for y in range(_CHUNK_HEIGHT):
+                    for z in range(_CHUNK_WIDTH):
+                        block: Block = Block(glm.vec3(x,y,z), Block.ID(random.randrange(1, len(Block.ID))))
+                        block.link_chunk(self)
+                        self._blocks.append(block)
+        else:
+            for block in blocks:
+                block.link_chunk(self)
+                self._blocks.append(block)
+        for block in self._blocks:
+            self.update_block_in_chunk(block)
+
+    def blocks(self, chunkBlockID) -> Block:
+        return self._blocks[chunkBlockID]
     @property
     def not_empty(self) -> bool:
-        return self.num_not_null_blocks != 0
+        return self.num_solid_blocks != 0
 
-    def init(self, world, worldChunkID: int):
-        from MineClone.World import World
-        self.world: World = world
-        self.worldChunkID: int = worldChunkID
-        self.is_chunk = self.chunkID == Chunk.ID.Valid
-        self.neighbourChunks: dict[Chunk.Cardinal, Chunk] = {k: self.world.get_chunk_from_world_chunk_pos(v) for k, v in
-                                                             self._neighbourPos.items()}
-        self.octree: SpatialTree = Octree(self.bounds)
-        for x in range(_CHUNK_WIDTH):
-            for y in range(_CHUNK_HEIGHT):
-                for z in range(_CHUNK_WIDTH):
-                    blockID = Block.ID(random.randrange(0, len(Block.ID)))
-                    self.set_block(self._get_chunk_block_id(x, y, z), blockID)
+    def neighbourChunk(self, dir: Cardinal):
+        if self.world:
+            if dir not in self._neighbourChunkCache.keys():
+                self._neighbourChunkCache[dir] = self.world.get_chunk(self.neighbourPositions[dir])
+            return self._neighbourChunkCache[dir]
+        return None
+
+    def link_world(self, world):
+        self.world = world
+
+    def update_block_in_chunk(self, block: Block):
+        if block.is_solid:
+            if None is self.solid_blocks[block.id_from_chunk]:
+                self.solid_blocks[block.id_from_chunk] = block.id_from_chunk
+                self.num_solid_blocks += 1
+                self.octree.insert(block)
+        else:
+            if self.solid_blocks[block.id_from_chunk] == block.id_from_chunk:
+                self.num_solid_blocks -= 1
+                self.solid_blocks[block.id_from_chunk] = None
+                self.octree.remove(block)
+        if self.solid_blocks[block.id_from_chunk]:
+            self.block_instances[block.id_from_chunk] = block.get_face_instance_data()
+        else:
+            self.block_instances[block.id_from_chunk] = None
+        for side in Block.Side:
+            adjBlock = block.adjBlock(side)
+            if adjBlock:
+                if not adjBlock.is_transparent:
+                    opposite = Block.oppositeSide[side]
+                    visible = adjBlock.face_visible(opposite)
+                    if visible and not block.is_transparent:
+                        adjBlock.hide_face(opposite)
+                    elif not visible and block.is_transparent:
+                        adjBlock.reveal_face(opposite)
+                    else:
+                        continue
+                    self.block_instances[adjBlock.id_from_chunk] = adjBlock.get_face_instance_data()
+
+        if self.world:
+            self.world.update_chunk_in_world(self)
 
     def set_block(self, chunkBlockID: int, blockID: Block.ID):
-        block = self.blocks[chunkBlockID]
+        block = self._blocks[chunkBlockID]
         if not block.initialised:
-            block.init(self, chunkBlockID, blockID)
+            block.link_chunk(self, chunkBlockID, blockID)
             self.octree.insert(block)
         else:
             self.set_block_instance(block)
-        if self.not_null_blocks[chunkBlockID] and not block.is_block:
-            self.num_not_null_blocks -= 1
-            self.not_null_blocks[chunkBlockID] = None
-        elif not self.not_null_blocks[chunkBlockID] and block.is_block:
-            self.num_not_null_blocks += 1
-            self.not_null_blocks[chunkBlockID] = block
+        if self.solid_blocks[chunkBlockID] and not block.is_solid:
+            self.num_solid_blocks -= 1
+            self.solid_blocks[chunkBlockID] = None
+        elif not self.solid_blocks[chunkBlockID] and block.is_solid:
+            self.num_solid_blocks += 1
+            self.solid_blocks[chunkBlockID] = block
 
     def query_aabb_blocks(self, boxRange: AABB, hitBlocks: set[Block] = None) -> set[Block]:
         return self.octree.query_aabb(boxRange, hitBlocks)
@@ -111,30 +157,47 @@ class Chunk(PhysicalBox):
         return self.worldChunkBlockPos + blockPos  # Chunk Pos in world plus chunk rel coordinate
 
     def _get_block(self, x: int, y: int, z: int) -> Block:
-        return self.blocks[self._get_chunk_block_id(x, y, z)]
+        return self._blocks[Chunk.block_id_from_chunk_block_pos(x, y, z)]
 
-    def get_block(self, worldBlockPos: glm.vec3, chunkBlockPos: glm.vec3 = None) -> Block:
-        if chunkBlockPos is None:
-            chunkBlockPos = worldBlockPos - self.worldChunkBlockPos
+    def get_block(self, chunkBlockPos: glm.vec3 = None) -> Block | None:
         chunkBlockX, chunkBlockY, chunkBlockZ = [int(i) for i in chunkBlockPos]
 
         if chunkBlockY not in range(_CHUNK_HEIGHT):
             return None
         xOutOfRange, zOutOfRange = chunkBlockX not in range(_CHUNK_WIDTH), chunkBlockZ not in range(_CHUNK_WIDTH)
         if xOutOfRange or zOutOfRange:
-            if xOutOfRange:
-                if chunkBlockX < 0:
-                    cardinalDir: Chunk.Cardinal = Chunk.Cardinal.West
-                else:
-                    cardinalDir: Chunk.Cardinal = Chunk.Cardinal.East
             if zOutOfRange:
+                # adding chunkwidth brings negative to width-1 or width to 2x width, in both cases % chunkwidth after
+                # will get you to an in bounds result (width-1 for the former and 0 for the latter
+                chunkBlockZ = (chunkBlockZ + _CHUNK_WIDTH) % _CHUNK_WIDTH
+            if xOutOfRange:
+                chunkBlockX = (chunkBlockX + _CHUNK_WIDTH) % _CHUNK_WIDTH
+                if chunkBlockX < 0:
+                    if not zOutOfRange:
+                        cardinalDir: Chunk.Cardinal = Chunk.Cardinal.West
+                    else:
+                        if chunkBlockX < 0:
+                            cardinalDir: Chunk.Cardinal = Chunk.Cardinal.SouthWest
+                        else:
+                            cardinalDir: Chunk.Cardinal = Chunk.Cardinal.NorthWest
+                else:
+                    if not zOutOfRange:
+                        cardinalDir: Chunk.Cardinal = Chunk.Cardinal.East
+                    else:
+                        if chunkBlockX < 0:
+                            cardinalDir: Chunk.Cardinal = Chunk.Cardinal.SouthEast
+                        else:
+                            cardinalDir: Chunk.Cardinal = Chunk.Cardinal.NorthEast
+            elif zOutOfRange:
                 if chunkBlockZ < 0:
                     cardinalDir: Chunk.Cardinal = Chunk.Cardinal.South
                 else:
                     cardinalDir: Chunk.Cardinal = Chunk.Cardinal.North
-            chunk: Chunk = self.neighbourChunks[cardinalDir]
+            else:
+                raise Exception("If x or z out of range, this should not be possible to reach")
+            chunk: Chunk = self.neighbourChunk(cardinalDir)
             if chunk:
-                return chunk.get_block(worldBlockPos)
+                return chunk.get_block(glm.vec3(chunkBlockX, chunkBlockY, chunkBlockZ))
             return None
         else:
             return self._get_block(chunkBlockX, chunkBlockY, chunkBlockZ)
@@ -153,15 +216,15 @@ class Chunk(PhysicalBox):
 
     def update(self) -> bool:
         updated = False
-        for block in filter(None, self.not_null_blocks):
+        for chunkBlockID in filter(None, self.solid_blocks):
+            block: Block = self.blocks(chunkBlockID)
             if block.update_side_visibility():
-                self.block_instances[block.chunkBlockID] = block.get_face_instance_data()
+                self.block_instances[chunkBlockID] = block.get_face_instance_data()
                 updated = True
         return updated
 
     def set_block_instance(self, block: Block):
-        self.block_instances[block.chunkBlockID] = block.get_face_instance_data()
-        self.world.flag_chunk_update(self)
+        self.block_instances[block.id_from_chunk] = block.get_face_instance_data()
 
     def get_block_face_instance_data(self):
         block_instances = list(filter((None).__ne__, self.block_instances))
@@ -193,17 +256,19 @@ class Chunk(PhysicalBox):
                     limit[0] = max(limit[0], 0)
                     limit[1] = max(limit[1], 0)
 
-        visitedChunks.append(self.worldChunkID)
+        visitedChunks.append(self.chunk_id)
         renderedChunks[int(listPos[0])][int(listPos[1])] = self
         self._num_chunks_to_visit -= 1
         if self._num_chunks_to_visit:
             if chunksLeftFromHere:
-                for cardinalDir, neighbour in self.neighbourChunks.items():
-                    if neighbour.is_chunk:
-                        if neighbour.worldChunkID not in visitedChunks:
-                            shiftedPos = listPos + self.neighbourOffsets[cardinalDir]
-                            if minPos[0] <= shiftedPos[0] <= maxPos[0] and minPos[1] <= shiftedPos[1] <= maxPos[1]:
-                                neighbour.get_chunks_to_render(renderedChunks, chunksLeftFromHere, shiftedPos, visitedChunks)
+                for cardinalDir in Chunk.Cardinal:
+                    neighbour: Chunk | None = self.neighbourChunk(cardinalDir)
+                    if neighbour:
+                        if neighbour.not_empty:
+                            if neighbour.chunk_id not in visitedChunks:
+                                shiftedPos = listPos + self.neighbourOffsets[cardinalDir]
+                                if minPos[0] <= shiftedPos[0] <= maxPos[0] and minPos[1] <= shiftedPos[1] <= maxPos[1]:
+                                    neighbour.get_chunks_to_render(renderedChunks, chunksLeftFromHere, shiftedPos, visitedChunks)
 
         if Chunk._currentDepth:
             Chunk._currentDepth -= 1
@@ -213,12 +278,12 @@ class Chunk(PhysicalBox):
 
     def serialize(self) -> bytes:
         # Serialize all blocks into a single byte string
-        serialized_blocks = b"".join([block.serialize() for block in self.blocks])
+        serialized_blocks = b"".join([block.serialize() for block in self._blocks])
 
         # Pack the number of blocks (unsigned int), worldChunkPos (two floats), and serialized blocks
         return (
-                struct.pack("I", len(self.blocks)) +  # Number of blocks
-                struct.pack("ff", *self.worldChunkPos) +  # World chunk position (two floats)
+                struct.pack("I", len(self._blocks)) +  # Number of blocks
+                struct.pack("ff", *self.normal_chunk_pos) +  # World chunk position (two floats)
                 serialized_blocks  # Serialized blocks data
         )
 

@@ -5,17 +5,26 @@ import struct
 from MineClone.Chunk import *
 from MineClone.Chunk import _BLOCKS_IN_CHUNK, _QUADS_IN_CHUNK, _CHUNK_HEIGHT, _CHUNK_WIDTH, _CHUNK_SIZE
 
-_WORLD_CHUNK_AXIS_LENGTH = 4
+_WORLD_CHUNK_AXIS_LENGTH = 1
 _WORLD_CHUNK_RANGE = range(-_WORLD_CHUNK_AXIS_LENGTH, _WORLD_CHUNK_AXIS_LENGTH + 1)
 _CHUNKS_IN_ROW = len(_WORLD_CHUNK_RANGE)
-
 _BLOCKS_IN_ROW = _CHUNKS_IN_ROW * _CHUNK_WIDTH
-_WORLD_SIZE = glm.vec3(_BLOCKS_IN_ROW, _CHUNK_HEIGHT, _BLOCKS_IN_ROW)
-_WORLD_SIZE_HALF = _WORLD_SIZE / 2
 
-_WORLD_MID_POINT = glm.vec3(0, _WORLD_SIZE_HALF.y, 0)
-_WORLD_MIN_POINT = _WORLD_MID_POINT - _WORLD_SIZE_HALF
-_WORLD_MAX_POINT = _WORLD_MIN_POINT + _WORLD_SIZE_HALF
+_WORLD_MAX = glm.vec3(
+    _BLOCKS_IN_ROW/2 + 0.5,
+    _CHUNK_HEIGHT,
+    _BLOCKS_IN_ROW/2 + 0.5
+)
+_WORLD_MIN = glm.vec3(
+    -_WORLD_MAX.x,
+    0,
+    -_WORLD_MAX.z
+)
+
+_WORLD_SIZE = _WORLD_MAX - _WORLD_MIN
+
+_WORLD_CENTER = _WORLD_MIN + _WORLD_SIZE / 2
+
 
 _CHUNKS_IN_WORLD = _CHUNKS_IN_ROW * _CHUNKS_IN_ROW
 
@@ -23,40 +32,116 @@ _BLOCKS_IN_WORLD = _BLOCKS_IN_CHUNK * _CHUNKS_IN_WORLD
 _QUADS_IN_WORLD = _QUADS_IN_CHUNK * _CHUNKS_IN_WORLD
 
 
-class World(PhysicalBox):
-    # Initialize chunks as a 1D list
-    chunks: list[Chunk] = [Chunk(glm.vec2(x, z)) for x in _WORLD_CHUNK_RANGE for z in _WORLD_CHUNK_RANGE]
-    chunk_instances: list[np.ndarray] = [None] * _CHUNKS_IN_WORLD
+class World:
+    pass
 
-    def _get_world_chunk_id(self, x: int, z: int) -> int:
-        return x * _CHUNKS_IN_ROW + z
+
+class WorldRenderer:
+    def _build_mesh(self):
+        pass
+
+
+class World(PhysicalBox):
+    chunk_instances: list[np.ndarray] = [None] * _CHUNKS_IN_WORLD
+    not_empty_chunks: list[int | None] = [None] * _CHUNKS_IN_WORLD
+
+    # World chunk array index from chunk array offset (chunk.x/z = 0 to _CHUNKS_IN_ROW)
+    @staticmethod
+    def chunk_id_from_chunk_array_offset(chunk_array_offset: glm.vec2) -> int:
+        return int(chunk_array_offset[0] * _CHUNKS_IN_ROW + chunk_array_offset[1])
+
+    # World chunk array offset vec2 from chunk position in world
+    # (chunk.x/z = -WORLD_CHUNK_AXIS_LENGTH to WORLD_CHUNK_AXIS_LENGTH)
+    @staticmethod
+    def chunk_array_offset_from_chunk_pos(chunk_pos: glm.vec2) -> glm.vec2:
+        return chunk_pos + _WORLD_CHUNK_AXIS_LENGTH
+
+    # World chunk array index from chunk position in world
+    # (chunk.x/z = -WORLD_CHUNK_AXIS_LENGTH to WORLD_CHUNK_AXIS_LENGTH)
+    @staticmethod
+    def chunk_id_from_chunk_pos(chunk_pos: glm.vec2) -> int:
+        return World.chunk_id_from_chunk_array_offset(
+            World.chunk_array_offset_from_chunk_pos(chunk_pos)
+        )
+
+    # World chunk array offset vec2 from position in world
+    # (worldPos.x/z = -inf to inf)
+    @staticmethod
+    def chunk_array_offset_from_world_pos(worldPos: glm.vec3) -> glm.vec2:
+        return World.chunk_array_offset_from_chunk_pos(
+            Chunk.pos_from_world_pos(worldPos)
+        )
+
+    # World chunk array offset index from position in world
+    # (worldPos.x/z = -inf to inf)
+    @staticmethod
+    def chunk_id_from_world_pos(worldPos: glm.vec3) -> int:
+        return World.chunk_id_from_chunk_array_offset(
+            World.chunk_array_offset_from_world_pos(worldPos)
+        )
+
+    def chunk_from_world_pos(self, worldPos: glm.vec3) -> Chunk:
+        return self.chunks(World.chunk_id_from_world_pos(worldPos))
+
+    def chunk_from_chunk_array_offset(self, chunk_array_offset: glm.vec2) -> Chunk:
+        return self.chunks(World.chunk_id_from_chunk_array_offset(chunk_array_offset))
+
+    def chunk_from_chunk_pos(self, chunk_pos: glm.vec2) -> Chunk:
+        return self.chunks(self.chunk_id_from_chunk_pos(chunk_pos))
 
     def __init__(self, chunks: list[Chunk] = None):
-        self.bounds = AABB.from_pos_size(_WORLD_MID_POINT, _WORLD_SIZE + glm.vec3(1))
-        if not chunks:
-            self.chunks = copy.deepcopy(World.chunks)
-        self.not_empty_chunks: list[Chunk] = copy.deepcopy(self.chunk_instances)
+        self.bounds = AABB.from_pos_size(_WORLD_CENTER, _WORLD_SIZE)
+
+        self._chunks: list[Chunk] = []
+
+        self.chunk_instances = copy.deepcopy(World.chunk_instances)
+        self.not_empty_chunks = copy.deepcopy(World.not_empty_chunks)
+
         self.worldWidth = len(_WORLD_CHUNK_RANGE)
-        self.chunks_needing_update: set[Chunk] = set()
 
         self.quadtree: QuadTree = QuadTree.XZ(self.bounds, _CHUNK_SIZE + glm.vec3(1))
-        if chunks:
-            self.chunks = chunks
-            for chunk in chunks:
-                x, z = (int(i) for i in chunk.worldChunkPos + _WORLD_CHUNK_AXIS_LENGTH)
-                worldChunkID = self._get_world_chunk_id(x,z)
-                chunk.init(self, worldChunkID)
-                self.quadtree.insert(chunk)
-                self.not_empty_chunks[worldChunkID] = chunk
+        self.renderer: WorldRenderer | None = None
+
+        if chunks is None:
+            self._initialize_default_chunks()
         else:
-            for x in range(self.worldWidth):
-                for z in range(self.worldWidth):
-                    chunkIndex = self._get_world_chunk_id(x, z)
-                    chunk = self.chunks[chunkIndex]
-                    worldChunkID = chunkIndex
-                    chunk.init(self, worldChunkID)
-                    self.quadtree.insert(chunk)
-                    self.not_empty_chunks[worldChunkID] = chunk
+            self._initialize_with_chunks(chunks)
+
+        for chunk in self._chunks:
+            self.update_chunk_in_world(chunk)
+        self.update()
+
+    def _initialize_default_chunks(self):
+        for x in range(self.worldWidth):
+            for z in range(self.worldWidth):
+                chunk = Chunk(glm.vec2(x, z))
+                chunk.link_world(self)
+                self._chunks.append(chunk)
+
+    def _initialize_with_chunks(self, chunks):
+        for chunk in chunks:
+            chunk.link_world(self)
+            self._chunks.append(chunk)
+
+    def link_renderer(self, renderer: WorldRenderer):
+        self.renderer = renderer
+
+    def update_chunk_in_world(self, chunk: Chunk):
+        if chunk.not_empty:
+            if None is self.not_empty_chunks[chunk.chunk_id]:
+                self.not_empty_chunks[chunk.chunk_id] = chunk.chunk_id
+                self.quadtree.insert(chunk)
+        else:
+            if self.not_empty_chunks[chunk.chunk_id] == chunk.chunk_id:
+                self.not_empty_chunks[chunk.chunk_id] = None
+                self.quadtree.remove(chunk)
+        if self.not_empty_chunks[chunk.chunk_id]:
+            self.chunk_instances[chunk.chunk_id] = chunk.get_block_face_instance_data()
+        else:
+            self.chunk_instances[chunk.chunk_id] = None
+        if self.renderer:
+            self.renderer._build_mesh()
+
 
     def query_aabb_chunks(self, boxRange: AABB) -> set[Chunk]:
         return self.quadtree.query_aabb(boxRange)
@@ -76,37 +161,16 @@ class World(PhysicalBox):
             hitChunk.query_segment_blocks(ray, hitBlocks)
         return hitBlocks
 
-    def _get_chunk(self, x: int, z: int) -> Chunk:
-        return self.chunks[self._get_world_chunk_id(x, z)]
-
-    def get_chunk_from_world_chunk_pos(self, worldChunkPos: glm.vec2) -> Chunk:
-        if worldChunkPos[0] not in _WORLD_CHUNK_RANGE or worldChunkPos[1] not in _WORLD_CHUNK_RANGE:
-            return None
-        x, z = [int(i) for i in worldChunkPos + _WORLD_CHUNK_AXIS_LENGTH]
-        return self._get_chunk(x, z)
-
-    def get_chunk_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Chunk:
-        return self.get_chunk_from_world_chunk_pos(glm.floor(glm.vec2(worldBlockPos.xz) / _CHUNK_WIDTH))
-
-    def get_block_from_world_block_pos(self, worldBlockPos: glm.vec3) -> Block:
-        self.get_chunk_from_world_block_pos(worldBlockPos).get_block_from_world_block_pos(worldBlockPos)
+    def chunks(self, worldChunkID: int) -> Chunk:
+        return self._chunks[worldChunkID]
 
     def update(self) -> bool:
         updated = False
-        for chunk in list(filter((None).__ne__, self.not_empty_chunks)):
+        for worldChunkID in list(filter((None).__ne__, self.not_empty_chunks)):
+            chunk: Chunk = self.chunks(worldChunkID)
             chunk.update()
-            self.chunk_instances[chunk.worldChunkID] = chunk.get_block_face_instance_data()
+            self.chunk_instances[worldChunkID] = chunk.get_block_face_instance_data()
             updated = True
-        return updated
-
-    def flag_chunk_update(self, chunk: Chunk):
-        self.chunks_needing_update.add(chunk)
-    def run_partial_update(self):
-        updated: bool = False
-        for i in range(len(self.chunks_needing_update)):
-            updated = True
-            chunk: Chunk = self.chunks_needing_update.pop()
-            self.chunk_instances[chunk.worldChunkID] = chunk.get_block_face_instance_data()
         return updated
 
     def get_instance_data(self):
@@ -115,16 +179,28 @@ class World(PhysicalBox):
             return None
         return np.concatenate(chunk_instances, dtype=chunk_instances[0].dtype)
 
+    def get_chunk_instance_data(self, worldChunkID: int):
+        return self.chunk_instances[worldChunkID] if worldChunkID else None
+
+    def get_chunk(self, normal_chunk_pos: glm.vec2 = None) -> Chunk:
+        worldChunkX, worldChunkZ = [int(i) for i in normal_chunk_pos]
+
+        xOutOfRange, zOutOfRange = worldChunkX not in _WORLD_CHUNK_RANGE, worldChunkZ not in _WORLD_CHUNK_RANGE
+        if xOutOfRange or zOutOfRange:
+            return None
+        else:
+            return self.chunk_from_chunk_array_offset(normal_chunk_pos)
+
     def serialize(self) -> bytes:
         # Serialize all chunks into a single byte string
-        serialized_chunks = b"".join([chunk.serialize() for chunk in self.chunks])
+        serialized_chunks = b"".join([chunk.serialize() for chunk in self._chunks])
 
         # Pack the number of chunks (unsigned int)
-        num_chunks_data = struct.pack('I', len(self.chunks))
+        num_chunks_data = struct.pack('I', len(self._chunks))
 
         # Pack the size of each chunk's data and the chunk data itself
         chunk_data = b""
-        for chunk in self.chunks:
+        for chunk in self._chunks:
             chunk_serialized = chunk.serialize()
             # Pack the size of the chunk's serialized data (unsigned int)
             chunk_size = struct.pack('I', len(chunk_serialized))
@@ -172,3 +248,98 @@ class World(PhysicalBox):
 
         # Return an instance of the class initialized with the deserialized chunks
         return cls(chunks)
+
+
+class WorldRenderer:
+    def __init__(self, world: World, renderDistance: int = 1):
+        world.link_renderer(self)
+        self.world: World = world
+
+        self._chunk_ids_in_world: list[list[int]] = [
+            [World.chunk_id_from_chunk_pos(glm.vec2(x,z)) for z in _WORLD_CHUNK_RANGE] for x in _WORLD_CHUNK_RANGE
+        ]
+        self._origin_chunk_pos: glm.vec2 | None = None
+        self._origin_chunk_id: int | None = None
+        self._set_origin_chunk_pos(glm.vec2() + _WORLD_CHUNK_AXIS_LENGTH)
+
+        self._render_distance: int | None = None
+        self._render_bounds: AABB | None = None
+        self._rMin: range | None = None
+        self._rMax: range | None = None
+        self._xRenderRange: range | None = None
+        self._zRenderRange: range | None = None
+        self.rendered_chunk_ids: list[list[int | None]] | None = None
+
+        self.worldBlockShader: ShaderProgram = ShaderProgram("block", "block")
+        self.worldMesh: Mesh = None
+
+        self.set_render_distance(renderDistance)
+
+    def _get_origin_chunk_id(self) -> int:
+        return self._chunk_ids_in_world[int(self._origin_chunk_pos[0])][int(self._origin_chunk_pos[1])]
+
+    def _set_origin_chunk_id(self):
+        self._origin_chunk_id: int = self._get_origin_chunk_id()
+
+    def _set_origin_chunk_pos(self, origin_chunk_pos: glm.vec2):
+        self._origin_chunk_pos = origin_chunk_pos
+        self._set_origin_chunk_id()
+
+    def set_render_distance(self, renderDistance: int):
+        self._render_distance = renderDistance
+        self._set_rendered_chunk_bounds()
+
+    def _set_rendered_chunk_bounds(self):
+        size: int | glm.vec3 = 2 * self._render_distance
+        size = glm.vec3(size, 0, size)
+        pos: glm.vec3 = glm.vec3(self._origin_chunk_pos[0], 0, self._origin_chunk_pos[1])
+
+        self._render_bounds = AABB.from_pos_size(pos, size)
+        self._rMin = self._render_bounds.min
+        self._rMax = self._render_bounds.max
+        self._xRenderRange = range(int(self._rMin.x), int(self._rMax.x)+1)
+        self._zRenderRange = range(int(self._rMin.z), int(self._rMax.z)+1)
+        self._set_rendered_chunk_ids()
+
+    def _set_rendered_chunk_ids(self):
+        self.rendered_chunk_ids = [
+            self._chunk_ids_in_world[x][z] if x > -1 and z > -1 and x < _CHUNKS_IN_ROW and z < _CHUNKS_IN_ROW else None for x in self._xRenderRange for z in self._zRenderRange
+        ]
+        self._build_mesh()
+
+    def update_origin(self, originPos: glm.vec3):
+        chunk_pos: glm.vec2 = glm.clamp(World.chunk_array_offset_from_world_pos(originPos), 0,
+                                        len(self._chunk_ids_in_world)-1)
+        if not chunk_pos == self._origin_chunk_pos:  # New position is outside of origin chunk
+            self._set_origin_chunk_pos(chunk_pos)
+            self._set_rendered_chunk_bounds()
+    def get_instance_data(self):
+        rendered_chunk_instances = list(filter((None).__ne__, [
+            self.world.get_chunk_instance_data(rendered_chunk_id) for rendered_chunk_id in self.rendered_chunk_ids
+        ]))
+        if len(rendered_chunk_instances) == 0:
+            return np.array([])
+        return np.concatenate(rendered_chunk_instances, dtype=rendered_chunk_instances[0].dtype)
+
+    def _build_mesh(self):
+        self.worldMesh = Mesh(Block.vertices, Block.indices, Block._TextureAtlas,
+                              Instances(self.get_instance_data(), Block.instanceLayout, True))
+
+    def draw(self, projection: glm.mat4, view: glm.mat4):
+        self.worldMesh.draw(self.worldBlockShader, projection, view)
+        CubeMesh(NMM(self.world.pos,s=self.world.size), alpha=0.5).draw(projection, view)
+
+    def __str__(self):
+        print_str = ""
+        for z in range(self._chunks_in_rendered_row):
+            for x in range(self._chunks_in_rendered_row):
+                if x > 0:
+                    print_str += ",\t"
+                chunk = self.rendered_chunk_ids[x][z]
+                if chunk.is_chunk:
+                    print_str += f"({chunk.worldChunkPos[0]},\t{chunk.worldChunkPos[1]})"
+                else:
+                    print_str += f"(NaN,\tNaN)"
+                if self._chunks_in_rendered_row - 1 == x:
+                    print_str += "\n"
+        return print_str

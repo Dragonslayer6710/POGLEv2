@@ -139,10 +139,6 @@ class Player(PhysicalBox):
             self.velocity.z = 0
         if np.sum(self.moveVector):
             self.acceleration += self.moveVector * self.moveSpeed
-        if self.attackCooldown > 0:
-            self.attackCooldown -= 1.0
-        if self.interactCooldown > 0:
-            self.interactCooldown -= 1.0
 
     def handle_movement_input(self, ctrl: Control):
         id = ctrl.GetID()
@@ -172,13 +168,13 @@ class Player(PhysicalBox):
         if not self.attackCooldown:
             self.attackCooldown = 10.0
             if self.targetBlock:
-                self.targetBlock.set(Block.ID.Null)
+                self.targetBlock.set(Block.ID.Air)
 
     def interact(self):
         if not self.interactCooldown:
             self.interactCooldown = 10.0
             if self.targetFaceBlockSpace:
-                if not self.targetFaceBlockSpace.is_block:
+                if not self.targetFaceBlockSpace.is_solid:
                     self.targetFaceBlockSpace.set(Block.ID(random.randrange(1, len(Block.ID))))
 
     def handle_action_input(self, ctrl: Control):
@@ -214,7 +210,7 @@ class Player(PhysicalBox):
 
         # Iterate through each block to check for collisions
         for block in collidingBlocks:
-            if not block.is_block:
+            if not block.is_solid:
                 continue
 
             # Retrieve the hit information from the block
@@ -304,6 +300,10 @@ class Player(PhysicalBox):
         self.move(deltaTime)
 
         self.acquireTargetBlock()
+        if self.attackCooldown > 0:
+            self.attackCooldown -= 1.0
+        if self.interactCooldown > 0:
+            self.interactCooldown -= 1.0
 
     def acquireTargetBlock(self):
         if not self.checkTargetBlock:
@@ -321,7 +321,7 @@ class Player(PhysicalBox):
             if nearHit.time > self.reachRadius:
                 continue
 
-            if not block.is_block:
+            if not block.is_solid:
                 continue
 
             if nearHit.time > nearBest:
@@ -344,7 +344,7 @@ class Player(PhysicalBox):
         if self.targetBlock:
             space = self.targetBlock.get_adjblock_at_segment_intersect(nearPos)
             if space:
-                if not space.is_block:
+                if not space.is_solid:
                     self.targetFaceBlockSpace = space
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
@@ -353,4 +353,6 @@ class Player(PhysicalBox):
         #if self.collidingBlockPositions:
         #    self.collidingBlockWireCubesMesh.draw(projection, view)
         if self.targetBlock:
-            self.targetBlockWireframeCubeMesh.draw(projection, view)
+            tbwfCubeMesh = self.targetBlockWireframeCubeMesh
+            if tbwfCubeMesh:
+                tbwfCubeMesh.draw(projection, view)

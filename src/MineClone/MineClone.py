@@ -1,18 +1,17 @@
 import os.path
 
-from MineClone.WorldRenderer import *
 from MineClone.Player import *
 
 class Game:
     def __init__(self):
-        if os.path.exists("worldFile.bin"):
-            with open("worldfile.bin", "rb") as f:
-                self.world: World = World.deserialize(f.read())
-        else:
+        #if os.path.exists("worldFile.bin"):
+        #    with open("worldfile.bin", "rb") as f:
+        #        self.world: World = World.deserialize(f.read())
+        #else:
+        if True:
             self.world: World = World()
         with open("worldfile.bin","wb") as f:
             f.write(self.world.serialize())
-        self.world.update()
 
         self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
         self.player: Player = Player(self.world, glm.vec3(0,5,0))
@@ -25,8 +24,6 @@ class Game:
 
     def update(self, deltaTime: float):
         self.player.update(deltaTime)
-        if self.world.run_partial_update():
-            self.worldRenderer.set_instance_data()
         self.worldRenderer.update_origin(self.player.pos)
 
 

@@ -96,7 +96,7 @@ class HelloLayer(Layer):
             #self.testBlockShader = ShaderProgram("block", "block")
             #self.testBlockShader.use()
 
-            self.renderDistance = game.worldRenderer.renderDistance
+            self.renderDistance = game.worldRenderer._render_distance
             self.maxRenderDistance = _WORLD_CHUNK_AXIS_LENGTH
             self.minRenderDistance = 1
             self.renderDistanceRangeSize = self.maxRenderDistance - self.minRenderDistance + 1
@@ -128,7 +128,7 @@ class HelloLayer(Layer):
                 elif ctrlID == Control.ID.Config.CYCLE_RENDER_DISTANCE:
                     if not self.tab_timer:
                         self.renderDistance = (self.renderDistance + 1 - self.minRenderDistance) % self.renderDistanceRangeSize + self.minRenderDistance
-                        game.worldRenderer._set_render_distance(self.renderDistance)
+                        game.worldRenderer.set_render_distance(self.renderDistance)
                         print(game.worldRenderer)
                         print(self.renderDistance + 1)
                         self.tab_timer = 20
