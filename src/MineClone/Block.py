@@ -92,14 +92,17 @@ class Block(PhysicalBox):
 
         self.chunk: Chunk = None
 
+        self.face_instances: list | None = None
+
     def link_chunk(self, chunk):
         self.chunk = chunk
-        self.bounds = AABB.from_pos_size(self.chunk.get_world_pos(self.offset_from_chunk))
-        texQuadCube = TexQuadCube(NMM(self.pos), glm.vec2(), glm.vec2())
-        if None == Block._TextureAtlas:
-            Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
-            Block.vertices = texQuadCube.vertices
-        self.face_instances: list[np.ndarray] = split_array(texQuadCube.instances.data, 6)
+        self.bounds = AABB.from_pos_size(self.chunk.get_world_pos(self.offset_from_chunk) + 0.5)
+        if not self.face_instances:
+            texQuadCube = TexQuadCube(NMM(self.pos), glm.vec2(), glm.vec2())
+            if None == Block._TextureAtlas:
+                Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
+                Block.vertices = texQuadCube.vertices
+            self.face_instances: list[np.ndarray] = split_array(texQuadCube.instances.data, 6)
         self.update_face_textures()
 
 
@@ -215,12 +218,65 @@ class Block(PhysicalBox):
 
     def serialize(self) -> bytes:
         # Pack the chunkBlockPos (3 floats) and blockID (int) into bytes
-        return struct.pack("fffI", self.offset_from_chunk.x, self.offset_from_chunk.y, self.offset_from_chunk.z, self.id.value)
+        header_data = struct.pack(
+            "fffI",
+            self.offset_from_chunk.x,
+            self.offset_from_chunk.y,
+            self.offset_from_chunk.z,
+            self.id.value
+        )
+
+        # Flatten face_instances numpy arrays into bytes
+        face_instances_data = b''.join(
+            [faces.tobytes() for faces in self.face_instances]
+        )
+
+        # Combine header data and face instances data
+        return header_data + face_instances_data
 
     @classmethod
     def deserialize(cls, binary_data: bytes):
+        import numpy as np
+
         # Unpack 3 floats and 1 unsigned int (the block ID) from the binary data
-        x, y, z, blockID = struct.unpack("fffI", binary_data)
+        x, y, z, blockID = struct.unpack("fffI", binary_data[:16])
 
         # Create a new instance of Block with the deserialized data
-        return cls(glm.vec3(x, y, z), Block.ID(blockID))
+        block = cls(glm.vec3(x, y, z), Block.ID(blockID))
+
+        # Compute the size of the face instances data
+        face_instance_size = 6 * 4 * 4 * np.dtype(
+            np.float32).itemsize  # 6 faces, 4 vertices per face, 4 floats per vertex
+
+        # Extract face instances data from binary_data
+        face_instances_data = binary_data[16:]
+        face_instances = []
+
+        # Assuming face_instances_data is contiguous for each face
+        for i in range(6):
+            start = i * face_instance_size
+            end = start + face_instance_size
+            face_instance_array = np.frombuffer(face_instances_data[start:end], dtype=np.float32).reshape((4, 4))
+            face_instances.append(face_instance_array)
+
+        block.face_instances = face_instances
+
+        # Ensure Block._TextureAtlas is initialized
+        if Block._TextureAtlas is None:
+            texQuadCube = TexQuadCube(NMM(block.pos), glm.vec2(), glm.vec2())
+            Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
+            Block.vertices = texQuadCube.vertices
+
+        return block
+
+    @staticmethod
+    def calculate_serialization_size() -> int:
+        # Basic block info size
+        basic_info_size = 3 * 4 + 4  # 3 floats (12 bytes) + 1 integer (4 bytes)
+
+        # Face instances data size
+        face_size = 4 * 4 * 4  # 4 vertices * 4 floats/vertex * 4 bytes/float
+        total_face_size = 6 * face_size  # 6 faces
+
+        return basic_info_size + total_face_size
+

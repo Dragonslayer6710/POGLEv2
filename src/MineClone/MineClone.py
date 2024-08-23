@@ -4,17 +4,27 @@ from MineClone.Player import *
 
 class Game:
     def __init__(self):
-        #if os.path.exists("worldFile.bin"):
-        #    with open("worldfile.bin", "rb") as f:
-        #        self.world: World = World.deserialize(f.read())
-        #else:
-        if True:
+        import dill
+        if os.path.exists("worldFile.dill"):
+            with open("worldFile.dill", "rb") as f:
+                if Block._TextureAtlas is None:
+                    texQuadCube = TexQuadCube(NMM(glm.vec3()), glm.vec2(), glm.vec2())
+                    Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
+                    Block.vertices = texQuadCube.vertices
+                self.world: World = dill.load(f)
+
+        # elif os.path.exists("worldFile.bin"):
+        #     with open("worldfile.bin", "rb") as f:
+        #         self.world: World = World.deserialize(f.read())
+        else:
             self.world: World = World()
-        with open("worldfile.bin","wb") as f:
-            f.write(self.world.serialize())
+        with open("worldFile.dill", "wb") as f:
+                dill.dump(self.world, f)
+        # with open("worldfile.bin","wb") as f:
+        #     f.write(self.world.serialize())
 
         self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
-        self.player: Player = Player(self.world, glm.vec3(0,5,0))
+        self.player: Player = Player(self.world, glm.vec3(0,self.world.max.y+2,0))
 
         self.crosshairMesh = CrosshairMesh(glm.vec2(0.5))
 

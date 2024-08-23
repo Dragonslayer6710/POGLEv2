@@ -11,9 +11,9 @@ _CHUNKS_IN_ROW = len(_WORLD_CHUNK_RANGE)
 _BLOCKS_IN_ROW = _CHUNKS_IN_ROW * _CHUNK_WIDTH
 
 _WORLD_MAX = glm.vec3(
-    _BLOCKS_IN_ROW/2 + 0.5,
+    _BLOCKS_IN_ROW/2,
     _CHUNK_HEIGHT,
-    _BLOCKS_IN_ROW/2 + 0.5
+    _BLOCKS_IN_ROW/2
 )
 _WORLD_MIN = glm.vec3(
     -_WORLD_MAX.x,
@@ -135,10 +135,8 @@ class World(PhysicalBox):
             if self.not_empty_chunks[chunk.chunk_id] == chunk.chunk_id:
                 self.not_empty_chunks[chunk.chunk_id] = None
                 self.quadtree.remove(chunk)
-        if self.not_empty_chunks[chunk.chunk_id]:
-            self.chunk_instances[chunk.chunk_id] = chunk.get_block_face_instance_data()
-        else:
-            self.chunk_instances[chunk.chunk_id] = None
+        self.chunk_instances[chunk.chunk_id] = chunk.get_block_face_instance_data() if self.not_empty_chunks[chunk.chunk_id] is not None else None
+
         if self.renderer:
             self.renderer._build_mesh()
 
@@ -180,7 +178,7 @@ class World(PhysicalBox):
         return np.concatenate(chunk_instances, dtype=chunk_instances[0].dtype)
 
     def get_chunk_instance_data(self, worldChunkID: int):
-        return self.chunk_instances[worldChunkID] if worldChunkID else None
+        return self.chunk_instances[worldChunkID]
 
     def get_chunk(self, normal_chunk_pos: glm.vec2 = None) -> Chunk:
         worldChunkX, worldChunkZ = [int(i) for i in normal_chunk_pos]
@@ -192,62 +190,79 @@ class World(PhysicalBox):
             return self.chunk_from_chunk_array_offset(normal_chunk_pos)
 
     def serialize(self) -> bytes:
-        # Serialize all chunks into a single byte string
-        serialized_chunks = b"".join([chunk.serialize() for chunk in self._chunks])
-
-        # Pack the number of chunks (unsigned int)
+        # Serialize the number of chunks
         num_chunks_data = struct.pack('I', len(self._chunks))
 
-        # Pack the size of each chunk's data and the chunk data itself
+        # Serialize each chunk
         chunk_data = b""
         for chunk in self._chunks:
             chunk_serialized = chunk.serialize()
-            # Pack the size of the chunk's serialized data (unsigned int)
             chunk_size = struct.pack('I', len(chunk_serialized))
-            # Append the size and the chunk's serialized data
             chunk_data += chunk_size + chunk_serialized
 
-        return num_chunks_data + chunk_data
+        # Serialize chunk instances
+        chunk_instances_data = b"".join([
+            instance.tobytes() if instance is not None else b""
+            for instance in self.chunk_instances
+        ])
+
+        # Serialize not_empty_chunks
+        not_empty_chunks_data = struct.pack(f'{len(self.not_empty_chunks)}I', *self.not_empty_chunks)
+
+        return num_chunks_data + chunk_data + chunk_instances_data + not_empty_chunks_data
 
     @classmethod
     def deserialize(cls, binary_data: bytes):
-        # Ensure there is enough data for the initial unpack of the number of chunks
+        offset = 0
+
+        # Unpack the number of chunks
         if len(binary_data) < 4:
             raise ValueError("Insufficient data to read the number of chunks")
+        num_chunks = struct.unpack('I', binary_data[offset:offset + 4])[0]
+        offset += 4
 
-        # Unpack the number of chunks (unsigned int)
-        num_chunks = struct.unpack("I", binary_data[:4])[0]
         chunks = []
-        offset = 4  # Initial offset after the number of chunks
-
         for _ in range(num_chunks):
-            # Ensure there is enough data to read the size of the next chunk
             if offset + 4 > len(binary_data):
                 raise ValueError("Insufficient data to read chunk size")
-
-            # Read the size of the next chunk's data (unsigned int)
             chunk_size = struct.unpack('I', binary_data[offset:offset + 4])[0]
-            offset += 4  # Move past the chunk size
+            offset += 4
 
-            # Ensure there is enough data to read the complete chunk
             if offset + chunk_size > len(binary_data):
                 raise ValueError(
                     f"Insufficient data to read the complete chunk. Expected size: {chunk_size}, available data: {len(binary_data) - offset}")
 
-            # Extract the chunk's data
             chunk_data = binary_data[offset:offset + chunk_size]
-
-            # Deserialize the chunk
-            try:
-                chunks.append(Chunk.deserialize(chunk_data))
-            except Exception as e:
-                raise ValueError(f"Error deserializing chunk: {e}")
-
-            # Update offset for the next chunk
+            chunks.append(Chunk.deserialize(chunk_data))
             offset += chunk_size
 
-        # Return an instance of the class initialized with the deserialized chunks
-        return cls(chunks)
+        # Deserialize the chunk instances
+        chunk_instances = []
+        for _ in range(_CHUNKS_IN_WORLD):
+            instance_size = Block.instanceLayout.nbytes * _BLOCKS_IN_CHUNK
+            if offset + instance_size > len(binary_data):
+                chunk_instances.append(None)
+            else:
+                chunk_instance_data = binary_data[offset:offset + instance_size]
+                chunk_instances.append(
+                    np.frombuffer(chunk_instance_data, dtype=Block.instanceLayout.dtype).reshape((6, 4, 4)))
+                offset += instance_size
+
+        # Deserialize the not_empty_chunks
+        not_empty_chunks_format = f'{_CHUNKS_IN_WORLD}I'
+        not_empty_chunks_size = struct.calcsize(not_empty_chunks_format)
+        if offset + not_empty_chunks_size > len(binary_data):
+            raise ValueError("Insufficient data to read not_empty_chunks")
+        not_empty_chunks = list(
+            struct.unpack(not_empty_chunks_format, binary_data[offset:offset + not_empty_chunks_size]))
+        offset += not_empty_chunks_size
+
+        # Create the world instance
+        world = cls(chunks)
+        world.chunk_instances = chunk_instances
+        world.not_empty_chunks = not_empty_chunks
+
+        return world
 
 
 class WorldRenderer:
@@ -314,9 +329,10 @@ class WorldRenderer:
             self._set_origin_chunk_pos(chunk_pos)
             self._set_rendered_chunk_bounds()
     def get_instance_data(self):
-        rendered_chunk_instances = list(filter((None).__ne__, [
-            self.world.get_chunk_instance_data(rendered_chunk_id) for rendered_chunk_id in self.rendered_chunk_ids
-        ]))
+        rendered_chunk_instances = [
+            self.world.get_chunk_instance_data(rendered_chunk_id) if rendered_chunk_id is not None else None for rendered_chunk_id in self.rendered_chunk_ids
+        ]
+        rendered_chunk_instances = list(filter((None).__ne__, rendered_chunk_instances))
         if len(rendered_chunk_instances) == 0:
             return np.array([])
         return np.concatenate(rendered_chunk_instances, dtype=rendered_chunk_instances[0].dtype)
@@ -327,8 +343,9 @@ class WorldRenderer:
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
         self.worldMesh.draw(self.worldBlockShader, projection, view)
-        CubeMesh(NMM(self.world.pos,s=self.world.size), alpha=0.5).draw(projection, view)
-
+        # CubeMesh(NMM(self.world.pos,s=self.world.size), alpha=0.5).draw(projection, view)
+        # for chunk in self.world._chunks:
+        #     CubeMesh(NMM(chunk.pos, s=chunk.size), color=Color.BLUE, alpha=0.5).draw(projection, view)
     def __str__(self):
         print_str = ""
         for z in range(self._chunks_in_rendered_row):

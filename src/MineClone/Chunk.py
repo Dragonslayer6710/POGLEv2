@@ -68,14 +68,17 @@ class Chunk(PhysicalBox):
         self._neighbourChunkCache: dict[Chunk.Cardinal, Chunk | None] = {}
         self.neighbourPositions: dict[Chunk.Cardinal, glm.vec2] = {k: v + self.normal_chunk_pos for k, v in
                                                                    Chunk.neighbourOffsets.items()}
-        self.worldChunkBlockPos: glm.vec3 = glm.vec3(self.chunk_pos[0], 0, self.chunk_pos[1]) * _CHUNK_WIDTH
-        self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE + glm.vec3(1))
+        self.worldChunkBlockPos: glm.vec3 = glm.vec3(
+            self.chunk_pos[0]* _CHUNK_WIDTH - _CHUNK_SIZE_HALF.x,
+            0,
+            self.chunk_pos[1]* _CHUNK_WIDTH - _CHUNK_SIZE_HALF.z)
+        self.bounds = AABB.from_pos_size(self.worldChunkBlockPos + _CHUNK_SIZE_HALF, _CHUNK_SIZE)
         self.octree: SpatialTree = Octree(self.bounds)
         if not blocks:
             for x in range(_CHUNK_WIDTH):
                 for y in range(_CHUNK_HEIGHT):
                     for z in range(_CHUNK_WIDTH):
-                        block: Block = Block(glm.vec3(x,y,z), Block.ID(random.randrange(1, len(Block.ID))))
+                        block: Block = Block(glm.vec3(x,y,z), Block.ID(random.randrange(0, len(Block.ID))))
                         block.link_chunk(self)
                         self._blocks.append(block)
         else:
@@ -277,42 +280,48 @@ class Chunk(PhysicalBox):
             del Chunk._num_chunks_to_visit
 
     def serialize(self) -> bytes:
-        # Serialize all blocks into a single byte string
-        serialized_blocks = b"".join([block.serialize() for block in self._blocks])
+        serialized_data = bytearray()
 
-        # Pack the number of blocks (unsigned int), worldChunkPos (two floats), and serialized blocks
-        return (
-                struct.pack("I", len(self._blocks)) +  # Number of blocks
-                struct.pack("ff", *self.normal_chunk_pos) +  # World chunk position (two floats)
-                serialized_blocks  # Serialized blocks data
-        )
+        # Serialize size as three floats
+        serialized_data.extend(struct.pack("fff", self.size.x, self.size.y, self.size.z))
+
+        # Serialize other attributes
+        for block in self._blocks:
+            serialized_data.extend(block.serialize())
+
+        return bytes(serialized_data)
 
     @classmethod
     def deserialize(cls, binary_data: bytes):
-        # Ensure there is enough data for the initial unpack of the number of blocks
-        if len(binary_data) < 8:  # 4 bytes for the number of blocks + 4 bytes for two floats
-            raise ValueError("Insufficient data to read the number of blocks and worldChunkPos")
+        import struct
+        import glm
 
-        # Unpack the number of blocks (unsigned int)
-        num_blocks = struct.unpack("I", binary_data[:4])[0]
+        # Offset to track position in binary_data
+        offset = 0
 
-        # Unpack the worldChunkPos (two floats)
-        world_chunk_pos = glm.vec2(struct.unpack("ff", binary_data[4:12]))
+        # Deserialize size (as three floats)
+        if len(binary_data) < 12:
+            raise ValueError("Insufficient data to read size")
+        size_x, size_y, size_z = struct.unpack("fff", binary_data[offset:offset + 12])
+        size = glm.vec3(size_x, size_y, size_z)
+        offset += 12
 
+        # Define block size (this should match the size of serialized block data)
+        block_size = Block.calculate_serialization_size()  # Assuming a method to get the serialized size of a block
+
+        # Deserialize blocks
         blocks = []
-        offset = 12  # Initial offset after the number of blocks and worldChunkPos
-
-        block_size = struct.calcsize("fffi")  # Assuming block size is 16 bytes (4 bytes for each float and int)
-
-        for _ in range(num_blocks):
-            # Ensure there is enough data to read the next block
-            if offset + block_size > len(binary_data):
-                raise ValueError(f"Insufficient data to read block {_ + 1}")
-
-            # Extract each block's binary data and deserialize it
+        while offset + block_size <= len(binary_data):
             block_data = binary_data[offset:offset + block_size]
             blocks.append(Block.deserialize(block_data))
             offset += block_size
 
-        # Return an instance of the class initialized with the deserialized data
-        return cls(world_chunk_pos, blocks)
+        # Check if there is extra data after the last block
+        if offset != len(binary_data):
+            raise ValueError("Extra data found after block serialization")
+
+        chunk = cls(size)
+        chunk._blocks = blocks
+        return chunk
+
+
