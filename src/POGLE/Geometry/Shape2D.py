@@ -1,16 +1,16 @@
-from POGLE.Geometry.Vertex import *
+from POGLE.Geometry.Data import *
 
 
 class Shape:
-    from POGLE.Geometry.Vertex import _VertexAttribute as VertexAttribute
+    from POGLE.Geometry.Data import _DataAttribute as DataAttribute
     positions = []
     indices = []
 
     instances: Instances = None
-    initialVertexElements = [FloatVA.Vec3()]
+    initialVertexElements = [FloatDA.Vec3()]
 
-    def __init__(self, vertexElements: list = [], vertexAttributes: list[VertexAttribute] = [],
-                 instanceElements: list = [], instanceAttributes: list[VertexAttribute] = []):
+    def __init__(self, vertexElements: list = [], vertexAttributes: list[DataAttribute] = [],
+                 instanceElements: list = [], instanceAttributes: list[DataAttribute] = []):
         vertexElements = interleave_arrays(self.positions, *vertexElements)
         self.vertices: Vertices = Vertices(vertexElements, VertexLayout(self.initialVertexElements + vertexAttributes))
         if instanceElements:
@@ -57,11 +57,11 @@ class Crosshair(Shape):
         0, 1,
         2, 3
     ]
-    initialVertexElements = [FloatVA.Vec2()]
+    initialVertexElements = [FloatDA.Vec2()]
 
     def __init__(self, scale: glm.vec2, color: glm.vec3, alpha: float):
         super().__init__(instanceElements=[[scale], [color], [alpha]],
-                         instanceAttributes=[FloatVA.Vec2(1), FloatVA.Vec3(1), FloatVA.Single(1)])
+                         instanceAttributes=[FloatDA.Vec2(1), FloatDA.Vec3(1), FloatDA.Single(1)])
 
 from POGLE.Physics.Collisions import Ray
 class LineSegment(Shape):
@@ -69,4 +69,4 @@ class LineSegment(Shape):
 
     def __init__(self, ray: Ray, color: glm.vec3, alpha: float):
         self.positions = [ray.start, ray.start + ray.dir]
-        super().__init__(instanceElements=[[color], [alpha]], instanceAttributes=[FloatVA.Vec3(1), FloatVA.Single(1)])
+        super().__init__(instanceElements=[[color], [alpha]], instanceAttributes=[FloatDA.Vec3(1), FloatDA.Single(1)])

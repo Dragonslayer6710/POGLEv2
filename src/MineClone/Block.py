@@ -42,9 +42,9 @@ class Block(PhysicalBox):
     vertices: Vertices = None
     indices: np.array = Quad.indices
     instanceLayout: VertexLayout = VertexLayout([
-        FloatVA.Vec2(1),
-        FloatVA.Vec2(1),
-        FloatVA.Mat4()
+        FloatDA.Vec2(1),
+        FloatDA.Vec2(1),
+        FloatDA.Mat4()
     ])
 
     adjBlockOffsets: dict[Side, glm.vec3] = {
@@ -98,7 +98,7 @@ class Block(PhysicalBox):
         self.chunk = chunk
         self.bounds = AABB.from_pos_size(self.chunk.get_world_pos(self.offset_from_chunk) + 0.5)
         if not self.face_instances:
-            texQuadCube = TexQuadCube(NMM(self.pos), glm.vec2(), glm.vec2())
+            texQuadCube = TexQuadCube(self.pos, glm.vec2(), glm.vec2())
             if None == Block._TextureAtlas:
                 Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
                 Block.vertices = texQuadCube.vertices
@@ -199,7 +199,7 @@ class Block(PhysicalBox):
 
     def get_wireframe_cube_mesh(self) -> WireframeCubeMesh | None:
         if self.is_solid:
-            wfqCube = WireframeQuadCube(NMM(self.pos),Color.BLACK)
+            wfqCube = WireframeQuadCube(self.pos, Color.BLACK)
             wire_frame_faces = split_array(wfqCube.instances.data, 6)
             instance_data = np.array([])
             cnt = 0

@@ -1,10 +1,12 @@
-from POGLE.Geometry.Vertex import *
+from POGLE.Geometry.Data import *
 class Buffer:
     def __init__(self, buffers = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW, dtype = GLfloat):
         self.target: GLenum = buffers
         self.ID: GLuint = glGenBuffers(1)
         self.usage = usage
         self.dtype = dtype
+        self.stored_size: int = 0
+        self.data_len: int = 0
 
     def bind(self):
         glBindBuffer(self.target, self.ID)
@@ -13,11 +15,19 @@ class Buffer:
         glBindBuffer(self.target, 0)
 
     def buffer_data(self, size: GLsizeiptr, data: np.ndarray):
+        self.data_len = len(data)
+        self.stored_size = size
         glBufferData(self.target, size, data, self.usage)
+
+    def get_data(self):
         # Feedback is for debugging, may be removed or disabled in production
-        # feedback = (self.dtype * len(data))()
-        # glGetBufferSubData(self.target, 0, size, feedback)
-        # print(f"Buffering {size} bytes of data: {list(feedback)}")  # Debugging info
+        feedback = (self.dtype * self.data_len)()
+        glGetBufferSubData(self.target, 0, self.stored_size, feedback)
+        return feedback
+
+    def print_data(self):
+        print(f"Buffering {self.stored_size} bytes of data: {list(self.get_data())}")  # Debugging info
+
 
     def __del__(self):
         if glIsBuffer(self.ID):
@@ -56,9 +66,9 @@ class VertexArray:
         self.VBO = VertexBuffer()
         self.VBO.bind()
         self.VBO.buffer_data(vertices, instances)
-        vertices.setPointers()
+        vertices.set_vertex_attrib_pointers()
         if instances:
-            instances.setPointers(vertices.nextID(), vertices.bytes)
+            instances.set_vertex_attrib_pointers(vertices.nextID(), vertices.bytes)
         self.VBO.unbind()
 
         self.EBO = ElementBuffer()

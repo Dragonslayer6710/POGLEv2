@@ -15,7 +15,7 @@ class Shader:
     def __init__(self, shaderName: str, shaderType: GLenum):
         self.ID = glCreateShader(shaderType)
 
-        self.shaderPath = f"{cwd}\\..\\assets\\shaders\\{shaderName}.{_shaderExt[shaderType]}"
+        self.shaderPath = f"{cwd}/../assets/shaders/{shaderName}.{_shaderExt[shaderType]}"
         with open(self.shaderPath) as f:
             self.source = f.read()
         glShaderSource(self.ID, self.source,)
@@ -45,6 +45,56 @@ class FragmentShader(Shader):
         super().__init__(shaderName, GL_FRAGMENT_SHADER)
 
 
+class UniformBlockLayout(DataLayout):
+    from POGLE.Geometry.Data import _DataAttribute as DataAttribute
+    def __init__(self, block_name: str, uniformBlockAttribs: list[DataAttribute]):
+        super().__init__(uniformBlockAttribs)
+        self.name: str = block_name
+
+
+defaultUniformBlockLayout = UniformBlockLayout("Matrices", [
+    FloatDA.Mat4(),  # Projection Matrix
+    FloatDA.Mat4()  # View Matrix
+])
+
+
+
+class UniformBlock(DataPoint):
+    __create_key = object()
+    layout: UniformBlockLayout
+    _UBCache: dict = {}
+    _next_block_binding: int = 0
+
+    def __init__(self, create_key, uniformBlockElements, layout: UniformBlockLayout = defaultUniformBlockLayout):
+        super().__init__(uniformBlockElements, layout)
+        assert (create_key == UniformBlock.__create_key), \
+            "UniformBlock objects must be created using UniformBlock.create"
+
+        self.binding: int = UniformBlock.next_block_binding()
+        UniformBlock._UBCache[self.name]: UniformBlock = self
+
+    @classmethod
+    def create(cls, uniformBlockElements, layout: UniformBlockLayout = defaultUniformBlockLayout):
+        block: UniformBlock | None = UniformBlock.get_uniform_block(layout.name)
+        if block:
+            return block
+        return UniformBlock(cls.__create_key, uniformBlockElements, layout)
+
+    @staticmethod
+    def next_block_binding() -> int:
+        next_block_binding = UniformBlock._next_block_binding
+        UniformBlock._next_block_binding += 1
+        return next_block_binding
+
+    @staticmethod
+    def get_uniform_block(block_name: str):
+        return UniformBlock._UBCache.get(block_name)
+
+    @property
+    def name(self) -> str:
+        return self.layout.name
+
+
 class ShaderProgram:
     def __init__(self, vsName: str = "default", fsName: str = "default"):
         self.vertexShader = VertexShader(vsName)
@@ -53,6 +103,8 @@ class ShaderProgram:
         self.ID = glCreateProgram()
 
         self.uniLocations = {}
+        self.uniBlockIndices = {}
+        self.boundBlocks = []
 
         glAttachShader(self.ID, self.vertexShader.ID)
         glAttachShader(self.ID, self.fragmentShader.ID)
@@ -75,12 +127,31 @@ class ShaderProgram:
     def use(self):
         glUseProgram(self.ID)
 
-    def _cache_uniform(self, name: str):
-        self.uniLocations[name] = glGetUniformLocation(self.ID, name)
-        return self.uniLocations[name]
+    def _cache_uniform(self, uniform_name: str):
+        self.uniLocations[uniform_name] = glGetUniformLocation(self.ID, uniform_name)
+        return self.uniLocations[uniform_name]
 
-    def _gul(self, name: str): # Get uniform location
-        return self.uniLocations.get(name, self._cache_uniform(name))
+    def _gul(self, uniform_name: str): # Get uniform location
+        return self.uniLocations.get(uniform_name, self._cache_uniform(uniform_name))
+
+    def _cache_uniform_block(self, block_name: str):
+        self.uniBlockIndices[block_name] = glGetUniformBlockIndex(self.ID, block_name)
+        return self.uniBlockIndices[block_name]
+
+    def _gubi(self, block_name: str):
+        return self.uniBlockIndices.get(block_name, self._cache_uniform_block(block_name))
+
+    def _gub(self, block_name: str) -> UniformBlock | None:
+        return UniformBlock.get_uniform_block(block_name)
+
+    def bind_uniform_block(self, block_name: str):
+        block: UniformBlock | None = self._gub(block_name)
+        if not block:
+            return None
+        block_index = self._gubi(block_name)
+        if GL_INVALID_INDEX == block_index:
+            return GL_INVALID_INDEX
+        glUniformBlockBinding(self.ID, block_index, block.binding)
 
     def setMat4(self, name:str, value: glm.mat4):
         glUniformMatrix4fv(self._gul(name), 1, GL_FALSE, glm.value_ptr(value))
@@ -90,3 +161,11 @@ class ShaderProgram:
 
     def setInt(self, name: str, value: GLint):
         glUniform1i(self._gul(name), value)
+
+class UniformBuffer(Buffer):
+    def __init__(self):
+        super().__init__(GL_UNIFORM_BUFFER)
+        self.blockLocations = {}
+
+    def bind_block(self, block_binding: int = 0):
+        glBindBufferBase(self.target, block_binding, self.ID)

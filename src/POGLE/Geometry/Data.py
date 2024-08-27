@@ -50,7 +50,7 @@ _typeDict = {
 _typeBytes = {k: np.dtype(v).itemsize for k, v in _typeDict.items()}
 
 
-class _VertexAttribute:
+class _DataAttribute:
     class MatData:
         def __init__(self, rows: int = 0, cols: int = 0):
             self.rows: int = rows
@@ -62,13 +62,13 @@ class _VertexAttribute:
 
     @classmethod
     def _new(cls, normalized: GLboolean, subAttribs, divisor: int = 0, matData: MatData = None):
-        return _VertexAttribute(cls.__create_key, _typeBytes[cls._type] * subAttribs, cls._type, normalized, subAttribs,
-                                divisor, matData)
+        return _DataAttribute(cls.__create_key, _typeBytes[cls._type] * subAttribs, cls._type, normalized, subAttribs,
+                              divisor, matData)
 
     def __init__(self, create_key, bytes: GLint, type: GLenum, normalized: GLboolean, size: GLsizei, divisor: int,
                  matData: MatData = None):
-        assert (create_key == _VertexAttribute.__create_key), \
-            "_VertexAttribute objects must be created using _VertexAttribute._new"
+        assert (create_key == _DataAttribute.__create_key), \
+            "_DataAttribute objects must be created using _DataAttribute._new"
         self.bytes: GLint = bytes
         self.dtype: GLenum = type
         self.normalized: GLboolean = normalized
@@ -76,7 +76,7 @@ class _VertexAttribute:
         self.divisor = divisor
         self.matData = matData
 
-    def setPointer(self, id: GLuint, stride: GLsizei, offset: GLsizei):
+    def set_vertex_attrib_pointer(self, id: GLuint, stride: GLsizei, offset: GLsizei):
         if self.matData:
             subSize = int(self.size / self.matData.rows)
             subBytes = int(self.bytes / self.matData.rows)
@@ -117,119 +117,144 @@ class _VertexAttribute:
 
     @classmethod
     def _Mat(cls, divisor: int = 0, matRows: int = 2, matCols: int = 2, normalized: GLboolean = GL_FALSE):
-        return cls._new(normalized, matRows * matCols, divisor, _VertexAttribute.MatData(matRows, matCols))
+        return cls._new(normalized, matRows * matCols, divisor, _DataAttribute.MatData(matRows, matCols))
 
     @classmethod
     def Mat4(cls, divisor=1, normalized: GLboolean = GL_FALSE ):
         return cls._Mat(divisor, 4, 4, normalized)
 
 
-class BoolVA(_VertexAttribute):
+class BoolDA(_DataAttribute):
     _type = GL_BOOL
 
 
-class UByteVA(_VertexAttribute):
+class UByteDA(_DataAttribute):
     _type = GL_UNSIGNED_BYTE
 
 
-class ByteVA(_VertexAttribute):
+class ByteDA(_DataAttribute):
     _type = GL_BYTE
 
 
-class UShortVA(_VertexAttribute):
+class UShortDA(_DataAttribute):
     _type = GL_UNSIGNED_SHORT
 
 
-class ShortVA(_VertexAttribute):
+class ShortDA(_DataAttribute):
     _type = GL_SHORT
 
 
-class UintVA(_VertexAttribute):
+class UIntDA(_DataAttribute):
     _type = GL_UNSIGNED_INT
 
 
-class IntVA(_VertexAttribute):
+class IntDA(_DataAttribute):
     _type = GL_INT
 
 
-class FloatVA(_VertexAttribute):
+class FloatDA(_DataAttribute):
     _type = GL_FLOAT
 
 
-class DoubleVA(_VertexAttribute):
+class DoubleDA(_DataAttribute):
     _type = GL_DOUBLE
 
 
-class VertexLayout:
-    def __init__(self, vertAttribs):
-        if type(vertAttribs) != list:
-            vertAttribs = [vertAttribs]
-        self.vertAttribs: list[_VertexAttribute] = vertAttribs
+class DataLayout:
+    def __init__(self, dataAttribs: list[_DataAttribute]):
+        if type(dataAttribs) != list:
+            dataAttribs: list[_DataAttribute] = [dataAttribs]
+        self.dataAttribs: list[_DataAttribute] = dataAttribs
         self.stride = 0
-        self.nextID = 0
-        for vertAttrib in self.vertAttribs:
+        for vertAttrib in self.dataAttribs:
             self.stride += vertAttrib.bytes
-        self.count = len(vertAttribs)
+        self.count = len(dataAttribs)
 
-    def setPointers(self, extraOffset: int = 0):
+
+
+class VertexLayout(DataLayout):
+    def __init__(self, vertAttribs: list[_DataAttribute]):
+        super().__init__(vertAttribs)
+        self.nextID = 0
+
+    def set_vertex_attrib_pointers(self, extraOffset: int = 0):
         offset = 0
-        for vertAttrib in self.vertAttribs:
-            vertAttrib.setPointer(self.nextID, self.stride, offset + extraOffset)
+        for vertAttrib in self.dataAttribs:
+            vertAttrib.set_vertex_attrib_pointer(self.nextID, self.stride, offset + extraOffset)
             offset += vertAttrib.bytes
             if not vertAttrib.matData:
                 self.nextID += 1
             else:
                 self.nextID += vertAttrib.matData.cols
 
-
 defaultVertexLayout = VertexLayout([
-    FloatVA.Vec3(),  # Position
-    FloatVA.Vec3(),  # Colour
-    FloatVA.Single()  # Alpha
+    FloatDA.Vec3(),  # Position
+    FloatDA.Vec3(),  # Colour
+    FloatDA.Single()  # Alpha
 ])
 
 defaultInstanceLayout = VertexLayout([
-    FloatVA.Mat4(),  # Model Matrix
+    FloatDA.Mat4(),  # Model Matrix
 ])
 
+class DataPoint:
+    def __init__(self, dataElements, layout: DataLayout):
+        self.layout: DataLayout = layout
+        self.data: np.ndarray | None = None
+        self.bytes: int | None = None
+        self.setData(dataElements)
 
-class Vertex:
-    def __init__(self, vertexElements, layout: VertexLayout = defaultVertexLayout):
-        self.layout: VertexLayout = layout
+    def setData(self, dataElements):
         self.data = []
         self.bytes = 0
-        for i in range(len(vertexElements)):
-            vertexElement = vertexElements[i]
-            vertAttrib = layout.vertAttribs[i]
+        for i in range(len(dataElements)):
+            dataElement = dataElements[i]
+            vertAttrib = self.layout.dataAttribs[i]
 
             self.bytes += vertAttrib.bytes
             dtype = _typeDict[vertAttrib.dtype]
-            isMat = type(vertexElement) == glm.mat4
-            vertexElement = np.array(vertexElement, dtype)
+            isMat = type(dataElement) == glm.mat4
+            dataElement = np.array(dataElement, dtype)
             if isMat:
-                vertexElement = vertexElement.reshape(4,4).T
-            self.data = np.concatenate((self.data, vertexElement.flatten()), dtype=np.float32)
+                dataElement = dataElement.reshape(4, 4).T
+            self.data = np.concatenate((self.data, dataElement.flatten()), dtype=np.float32)
 
 
-class Vertices:
-    def __init__(self, verticesData, layout: VertexLayout = defaultVertexLayout, directData: bool = False):
+class DataPoints:
+    layout: DataLayout
+    def __init__(self, dataPointsData, layout: DataLayout, directData: bool = False):
         self.layout = layout
-        self.data: np.ndarray = []
-        self.bytes = 0
+        self.data: np.ndarray | None = None
+        self.bytes: int | None = None
+        self.setData(dataPointsData, directData)
+
+    def setData(self, dataPointsData, directData: bool = False):
         if directData:
-            self.data = verticesData
+            self.data = dataPointsData
             self.bytes = self.data.nbytes
         else:
-            if type(verticesData[0]) != list:
-                verticesData = interleave_arrays(verticesData)
-            for vertexData in verticesData:
-                vertex = Vertex(vertexData, layout)
-                self.bytes += vertex.bytes
-                self.data = np.concatenate((self.data, vertex.data), dtype=np.float32)
+            self.data = []
+            self.bytes = 0
+            if type(dataPointsData[0]) != list:
+                dataPointsData = interleave_arrays(dataPointsData)
+            for dataPointData in dataPointsData:
+                dataPoint = DataPoint(dataPointData, self.layout)
+                self.bytes += dataPoint.bytes
+                self.data = np.concatenate((self.data, dataPoint.data), dtype=np.float32)
 
-    def setPointers(self, start: int = 0, extraOffset: int = 0):
+
+class Vertex(DataPoint):
+    def __init__(self, vertexElements, layout: VertexLayout = defaultVertexLayout):
+        super().__init__(vertexElements, layout)
+
+class Vertices(DataPoints):
+    layout: VertexLayout
+    def __init__(self, verticesData, layout: VertexLayout = defaultVertexLayout, directData: bool = False):
+        super().__init__(verticesData, layout, directData)
+
+    def set_vertex_attrib_pointers(self, start: int = 0, extraOffset: int = 0):
         self.layout.nextID = start
-        self.layout.setPointers(extraOffset)
+        self.layout.set_vertex_attrib_pointers(extraOffset)
 
     def nextID(self) -> int:
         return self.layout.nextID
@@ -242,4 +267,3 @@ class Instances(Vertices):
             self.count = int(len(instancesData) / layout.count)
         else:
             self.count = len(instancesData)
-

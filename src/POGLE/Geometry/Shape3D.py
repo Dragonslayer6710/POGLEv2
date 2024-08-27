@@ -25,7 +25,7 @@ class WireframeCube(Shape):
     ]
 
     def __init__(self, position: glm.vec3, color: glm.vec3, alpha: float):
-        instanceAttributes = [FloatVA.Vec3(1), FloatVA.Single(1), FloatVA.Mat4()]
+        instanceAttributes = [FloatDA.Vec3(1), FloatDA.Single(1), FloatDA.Mat4()]
         if type(position) == list:
             if type(color) != list:
                 color = [color for pos in position]
@@ -50,17 +50,22 @@ class QuadCube(Quad):
     def __init__(self, outerModelMatrices: list[glm.mat4], vertexElements: list = [], vertexAttributes: list = [], instanceElements: list = [], instanceAttributes: list = []):
         if type(outerModelMatrices) != list:
             outerModelMatrices = [outerModelMatrices]
+        if type(outerModelMatrices[0]) == glm.vec3:
+            super().__init__(vertexElements, vertexAttributes, instanceElements + [outerModelMatrices * 6],
+                             instanceAttributes + [FloatDA.Vec3(1)])
+            return
         #[instanceElements[i].append(outerModelMatrices[i]) for i in range(len(instanceElements))]
         outerModelMatrices = [[outerModelMatrix * face for face in self.face_matrices for outerModelMatrix in outerModelMatrices]]
-        super().__init__(vertexElements, vertexAttributes, instanceElements + outerModelMatrices, instanceAttributes + [FloatVA.Mat4()])
+        super().__init__(vertexElements, vertexAttributes, instanceElements + outerModelMatrices, instanceAttributes + [FloatDA.Mat4()])
 
 
 class ColQuadCube(QuadCube):
     class Instance:
         def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
                      sideColAlphas: list[float] = 6 * [1.0]):
-            if type(outerModelMatrix) != glm.mat4:
-                raise TypeError("ColQuadCube outerModelMatrix must be a glm.mat4")
+            if type(outerModelMatrix) != glm.vec3:
+                if type(outerModelMatrix) != glm.mat4:
+                    raise TypeError("ColQuadCube outerModelMatrix must be a glm.mat4")
 
             if type(sideCols) == glm.vec3:
                 sideCols = 6 * [sideCols]
@@ -74,7 +79,7 @@ class ColQuadCube(QuadCube):
 
             self.data = [sideCols, sideColAlphas, outerModelMatrix]
 
-    _instanceAttributes = [FloatVA.Vec3(1), FloatVA.Single(1)]
+    _instanceAttributes = [FloatDA.Vec3(1), FloatDA.Single(1)]
     def __init__(self, outerModelMatrices: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.WHITE,
                  sideColAlphas: list[float] = 6 * [1.0]):
         isList = type(outerModelMatrices) == list
@@ -106,13 +111,9 @@ class WireframeQuadCube(ColQuadCube):
         3, 0
     ]
     class Instance(ColQuadCube.Instance):
-        def __init__(self, outerModelMatrix: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.BLACK,
+        def __init__(self, worldPosition: glm.vec3, sideCols: list[glm.vec3] = 6 * Color.BLACK,
                      sideColAlphas: list[float] = 6 * [1.0]):
-            super().__init__(outerModelMatrix, sideCols, sideColAlphas)
-
-        def __init__(self, outerModelMatrices: glm.mat4, sideCols: list[glm.vec3] = 6 * Color.BLACK,
-                     sideColAlphas: list[float] = 6 * [1.0]):
-            super().__init__(outerModelMatrices, sideCols, sideColAlphas)
+            super().__init__(worldPosition, sideCols, sideColAlphas)
 
 class TexQuadCube(QuadCube):
     texture_coords = [
@@ -139,8 +140,8 @@ class TexQuadCube(QuadCube):
 
             self.data = [texPos, texSize, outerModelMatrix]
 
-    _vertexAttributes = [FloatVA.Vec2()]
-    _instanceAttributes = [FloatVA.Vec2(1), FloatVA.Vec2(1)]
+    _vertexAttributes = [FloatDA.Vec2()]
+    _instanceAttributes = [FloatDA.Vec2(1), FloatDA.Vec2(1)]
     def __init__(self, outerModelMatrices: list[glm.mat4], texPos: list[glm.vec2], texSize: list[glm.vec2]):
         isList = type(outerModelMatrices) == list
         isInstance = type(outerModelMatrices) == TexQuadCube.Instance
@@ -188,7 +189,7 @@ class Cube(Shape):
 
     def __init__(self, color: glm.vec3, alpha: float, modelMat: glm.vec4):
         super().__init__(instanceElements=[[color], [alpha], [modelMat]],
-                         instanceAttributes=[FloatVA.Vec3(1), FloatVA.Single(1), FloatVA.Mat4()])
+                         instanceAttributes=[FloatDA.Vec3(1), FloatDA.Single(1), FloatDA.Mat4()])
 
 class Shapes:
     # 2D

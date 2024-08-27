@@ -1,3 +1,5 @@
+import numpy as np
+
 from POGLE.Shader import *
 from POGLE.Geometry.Texture import *
 from POGLE.Geometry.Shape3D import *
@@ -20,6 +22,8 @@ class Mesh:
         self.VAO = VertexArray(self.vertices, self.indices, self.instances)
         self.VAO.unbind()
 
+        self.UBO: UniformBuffer = UniformBuffer()
+
     def bind(self):
         self.VAO.bind()
         if self.texture:
@@ -32,10 +36,7 @@ class Mesh:
 
     def draw(self, shaderProgram: ShaderProgram, projection: glm.mat4 = None, view: glm.mat4 = None):
         shaderProgram.use()
-        if projection:
-            shaderProgram.setMat4("uProjection", projection)
-        if view:
-            shaderProgram.setMat4("uView", view)
+
         self.bind()
         if self.texture:
             shaderProgram.setInt("tex0", self.texture.get_texture_slot())
@@ -56,8 +57,9 @@ class QuadCubeMesh(Mesh):
 class WireframeCubeMesh(Mesh):
     def __init__(self, wfqCube: WireframeQuadCube, instances: Instances, thickness: float = 2.0):
         self.thickness = thickness
-        self.shader = ShaderProgram()
-
+        self.shader = ShaderProgram("wireframe_block")
+        self.shader.bind_uniform_block("Matrices")
+        self.shader.bind_uniform_block("BlockSides")
         super().__init__(wfqCube.vertices, wfqCube.indices, instances=instances, primitive=GL_LINES)
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
@@ -72,6 +74,7 @@ class CrosshairMesh(Mesh):
     def __init__(self, scale: glm.vec2, color: glm.vec3 = Color.WHITE, alpha: float = 1.0, thickness=1.0):
         self.thickness = thickness
         self.crosshairShader = ShaderProgram("crosshair", "crosshair")
+        self.crosshairShader.bind_uniform_block("Matrices")
         crosshair = Crosshair(scale, color, alpha)
         super().__init__(crosshair, instances=crosshair.instances, primitive=GL_LINES)
 
@@ -81,6 +84,7 @@ class CrosshairMesh(Mesh):
 class CubeMesh(Mesh):
     def __init__(self, modelMatrix: glm.mat4, color: glm.vec3 = Color.WHITE, alpha: float = 1.0):
         self.shader = ShaderProgram()
+        self.shader.bind_uniform_block("Matrices")
         cube = Cube(color, alpha, modelMatrix)
         super().__init__(cube, instances=cube.instances)
 
@@ -90,6 +94,7 @@ class CubeMesh(Mesh):
 class LineSegmentMesh(Mesh):
     def __init__(self, ray: Ray, color: glm.vec3 = Color.BLACK, alpha: float = 1.0):
         self.shader = ShaderProgram("ray")
+        self.shader.bind_uniform_block("Matrices")
         lineSegment = LineSegment(ray, color, alpha)
         super().__init__(lineSegment, instances=lineSegment.instances, primitive=GL_LINES)
 

@@ -144,6 +144,7 @@ class HelloLayer(Layer):
         # self.blockShader.setMat4("uView", game.playerCam.GetViewMatrix())
         projection = self._Renderer.get_projection()
         view = game.playerCam.GetViewMatrix()
+
         # defShader.setMat4("uModel", pentaModel)
         # pentaMesh.draw()
         # self.qcMesh.draw()

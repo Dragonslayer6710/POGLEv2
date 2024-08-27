@@ -7,8 +7,11 @@ layout (location = 3) in mat4 aModelMatrix;
 
 out vec4 vColour;
 
-uniform mat4 uView;
-uniform mat4 uProjection;
+layout (std140) uniform Matrices
+{
+    mat4 uProjection;
+    mat4 uView;
+};
 
 void main(){
     gl_Position = uProjection * uView * aModelMatrix * vec4(aPos, 1.0);
