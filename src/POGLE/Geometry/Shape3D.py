@@ -116,13 +116,7 @@ class WireframeQuadCube(ColQuadCube):
             super().__init__(worldPosition, sideCols, sideColAlphas)
 
 class TexQuadCube(QuadCube):
-    texture_coords = [
-        glm.vec2(0.0, 0.0),
-        glm.vec2(0.0, 1.0),
-        glm.vec2(1.0, 1.0),
-        glm.vec2(1.0, 0.0)
-    ]
-
+    texture_coords = TexQuad.texture_coords
     class Instance:
         def __init__(self, outerModelMatrix: glm.mat4, texPos: list[glm.vec2], texSize: list[glm.vec2]):
             if type(outerModelMatrix) != glm.mat4:
@@ -194,4 +188,5 @@ class Cube(Shape):
 class Shapes:
     # 2D
     Quad = Quad()
+    TexQuad = TexQuad()
     Pentagon = Pentagon()

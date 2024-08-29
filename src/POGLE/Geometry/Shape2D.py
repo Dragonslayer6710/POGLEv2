@@ -30,6 +30,20 @@ class Quad(Shape):
         2, 3, 0
     ]
 
+class TexQuad(Quad):
+    texture_coords = [
+        glm.vec2(0.0, 0.0),
+        glm.vec2(0.0, 1.0),
+        glm.vec2(1.0, 1.0),
+        glm.vec2(1.0, 0.0)
+    ]
+
+    _vertexAttributes = [FloatDA.Vec2()]
+    _instanceAttributes = [FloatDA.Vec2(1), FloatDA.Vec2(1)]
+
+    def __init__(self):
+        super().__init__([self.texture_coords], self._vertexAttributes, instanceAttributes=self._instanceAttributes)
+
 
 class Pentagon(Shape):
     positions = [

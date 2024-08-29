@@ -1,10 +1,11 @@
 // block.vert
 #version 450 core
-layout (location = 0) in vec3 aPos;
+layout (location = 0) in vec2 aLocalPos;
 layout (location = 1) in vec2 aTexUV;
 layout (location = 2) in vec2 aTexPos;
-layout (location = 3) in vec2 aTexSize;
-layout (location = 4) in mat4 aModelMatrix;
+layout (location = 3) in uint aTexSize;
+layout (location = 4) in int aSideID;
+layout (location = 5) in vec3 aWorldPos;
 
 out vec2 vTexUV;
 
@@ -14,7 +15,19 @@ layout (std140) uniform Matrices
     mat4 uView;
 };
 
+layout (std140) uniform BlockSides
+{
+    mat4 uBlockSides[6];
+};
+
 void main(){
-    gl_Position = uProjection * uView * aModelMatrix * vec4(aPos, 1.0);
+    // First, transform the local position by the block transformation matrix.
+    vec4 localBlockPos = uBlockSides[aSideID] * vec4(aLocalPos, 0.0, 1.0);
+
+    // Then, add the world position (with w = 1.0 to ensure proper translation).
+    vec4 worldPos = localBlockPos + vec4(aWorldPos, 0.0);
+
+    // Finally, apply the view and projection transformations.
+    gl_Position = uProjection * uView * worldPos;
     vTexUV = aTexUV * aTexSize + aTexPos;
 }

@@ -2,6 +2,8 @@ import copy
 import os.path
 import struct
 
+import numpy as np
+
 from MineClone.Chunk import *
 from MineClone.Chunk import _BLOCKS_IN_CHUNK, _QUADS_IN_CHUNK, _CHUNK_HEIGHT, _CHUNK_WIDTH, _CHUNK_SIZE
 
@@ -42,7 +44,10 @@ class WorldRenderer:
 
 
 class World(PhysicalBox):
-    chunk_instances: list[np.ndarray] = [None] * _CHUNKS_IN_WORLD
+    block_face_ids: list[np.array] = [None] * _CHUNKS_IN_WORLD
+    block_face_tex_dims: list[np.array] = [None] * _CHUNKS_IN_WORLD
+    block_positions: list[np.array] = [None] * _CHUNKS_IN_WORLD
+
     not_empty_chunks: list[int | None] = [None] * _CHUNKS_IN_WORLD
 
     # World chunk array index from chunk array offset (chunk.x/z = 0 to _CHUNKS_IN_ROW)
@@ -94,7 +99,10 @@ class World(PhysicalBox):
 
         self._chunks: list[Chunk] = []
 
-        self.chunk_instances = copy.deepcopy(World.chunk_instances)
+        self.block_face_ids = copy.deepcopy(World.block_face_ids)
+        self.block_face_tex_dims = copy.deepcopy(World.block_face_tex_dims)
+        self.block_positions = copy.deepcopy(World.block_positions)
+
         self.not_empty_chunks = copy.deepcopy(World.not_empty_chunks)
 
         self.worldWidth = len(_WORLD_CHUNK_RANGE)
@@ -135,8 +143,10 @@ class World(PhysicalBox):
             if self.not_empty_chunks[chunk.chunk_id] == chunk.chunk_id:
                 self.not_empty_chunks[chunk.chunk_id] = None
                 self.quadtree.remove(chunk)
-        self.chunk_instances[chunk.chunk_id] = chunk.get_block_face_instance_data() if self.not_empty_chunks[chunk.chunk_id] is not None else None
-
+        if self.not_empty_chunks[chunk.chunk_id]:
+            self.set_chunk_instance(chunk)
+        else:
+            self.set_chunk_instance(chunk, True)
         if self.renderer:
             self.renderer._build_mesh()
 
@@ -167,18 +177,33 @@ class World(PhysicalBox):
         for worldChunkID in list(filter((None).__ne__, self.not_empty_chunks)):
             chunk: Chunk = self.chunks(worldChunkID)
             chunk.update()
-            self.chunk_instances[worldChunkID] = chunk.get_block_face_instance_data()
+            self.set_chunk_instance(chunk)
             updated = True
         return updated
 
     def get_instance_data(self):
-        chunk_instances = list(filter((None).__ne__, self.chunk_instances))
-        if not chunk_instances:
-            return None
-        return np.concatenate(chunk_instances, dtype=chunk_instances[0].dtype)
+        block_instances = list(filter((None).__ne__, self.block_positions))
+        block_face_instances = list(filter((None).__ne__, self.block_face_tex_dims))
+        if not block_instances:
+            return None, None
+        return (
+            np.concatenate(block_instances),
+            np.concatenate(block_face_instances)
+        )
 
-    def get_chunk_instance_data(self, worldChunkID: int):
-        return self.chunk_instances[worldChunkID]
+    def set_chunk_instance(self, chunk: Chunk, clear=False):
+        (
+            self.block_face_ids[chunk.chunk_id],
+            self.block_face_tex_dims[chunk.chunk_id],
+            self.block_positions[chunk.chunk_id]
+        ) = chunk.get_block_and_face_instance_data() if not clear else (None, None, None)
+
+    def get_block_and_face_instance_data(self, worldChunkID: int):
+        return (
+            self.block_face_ids[worldChunkID],
+            self.block_face_tex_dims[worldChunkID],
+            self.block_positions[worldChunkID]
+        )
 
     def get_chunk(self, normal_chunk_pos: glm.vec2 = None) -> Chunk:
         worldChunkX, worldChunkZ = [int(i) for i in normal_chunk_pos]
@@ -203,7 +228,7 @@ class World(PhysicalBox):
         # Serialize chunk instances
         chunk_instances_data = b"".join([
             instance.tobytes() if instance is not None else b""
-            for instance in self.chunk_instances
+            for instance in self.block_face_tex_dims
         ])
 
         # Serialize not_empty_chunks
@@ -239,13 +264,13 @@ class World(PhysicalBox):
         # Deserialize the chunk instances
         chunk_instances = []
         for _ in range(_CHUNKS_IN_WORLD):
-            instance_size = Block.instanceLayout.nbytes * _BLOCKS_IN_CHUNK
+            instance_size = Block.positionInstanceLayout.nbytes * _BLOCKS_IN_CHUNK
             if offset + instance_size > len(binary_data):
                 chunk_instances.append(None)
             else:
                 chunk_instance_data = binary_data[offset:offset + instance_size]
                 chunk_instances.append(
-                    np.frombuffer(chunk_instance_data, dtype=Block.instanceLayout.dtype).reshape((6, 4, 4)))
+                    np.frombuffer(chunk_instance_data, dtype=Block.positionInstanceLayout.dtype).reshape((6, 4, 4)))
                 offset += instance_size
 
         # Deserialize the not_empty_chunks
@@ -259,7 +284,7 @@ class World(PhysicalBox):
 
         # Create the world instance
         world = cls(chunks)
-        world.chunk_instances = chunk_instances
+        world.block_face_tex_dims = chunk_instances
         world.not_empty_chunks = not_empty_chunks
 
         return world
@@ -286,6 +311,8 @@ class WorldRenderer:
         self.rendered_chunk_ids: list[list[int | None]] | None = None
 
         self.worldBlockShader: ShaderProgram = ShaderProgram("block", "block")
+        self.worldBlockShader.bind_uniform_block("Matrices")
+        self.worldBlockShader.bind_uniform_block("BlockSides")
         self.worldMesh: Mesh = None
 
         self.set_render_distance(renderDistance)
@@ -329,19 +356,34 @@ class WorldRenderer:
             self._set_origin_chunk_pos(chunk_pos)
             self._set_rendered_chunk_bounds()
     def get_instance_data(self):
-        rendered_chunk_instances = [
-            self.world.get_chunk_instance_data(rendered_chunk_id) if rendered_chunk_id is not None else None for rendered_chunk_id in self.rendered_chunk_ids
-        ]
-        rendered_chunk_instances = list(filter((None).__ne__, rendered_chunk_instances))
-        if len(rendered_chunk_instances) == 0:
-            return np.array([])
-        return np.concatenate(rendered_chunk_instances, dtype=rendered_chunk_instances[0].dtype)
+        block_face_ids = []
+        block_face_tex_dims = []
+        block_positions = []
+        for rendered_chunk_id in self.rendered_chunk_ids:
+            (
+                ids,
+                tex_dims,
+                positions
+            ) = self.world.get_block_and_face_instance_data(rendered_chunk_id) if rendered_chunk_id is not None else (None, None, None)
+            block_face_ids.append(ids)
+            block_face_tex_dims.append(tex_dims)
+            block_positions.append(positions)
+        block_face_ids = list(filter((None).__ne__, block_face_ids))
+        block_face_tex_dims = list(filter((None).__ne__, block_face_tex_dims))
+        block_positions = list(filter((None).__ne__, block_positions))
+        if len(block_positions) == 0:
+            return np.array([]), np.array([]), np.array([])
+        return (
+            np.concatenate(block_face_ids).astype(np.ushort),
+            np.concatenate(block_face_tex_dims, dtype=np.float32),
+            np.concatenate(block_positions, dtype=np.float32)
+        )
 
     def _build_mesh(self):
-        self.worldMesh = Mesh(Block.vertices, Block.indices, Block._TextureAtlas,
-                              Instances(self.get_instance_data(), Block.instanceLayout, True))
+        self.worldMesh = BlockMesh(*self.get_instance_data())
 
     def draw(self, projection: glm.mat4, view: glm.mat4):
+        #return
         self.worldMesh.draw(self.worldBlockShader, projection, view)
         # CubeMesh(NMM(self.world.pos,s=self.world.size), alpha=0.5).draw(projection, view)
         # for chunk in self.world._chunks:

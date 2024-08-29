@@ -41,8 +41,8 @@ class Buffer:
 
 
 class VertexBuffer(Buffer):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, dtype=GLfloat):
+        super().__init__(dtype=dtype)
 
     def buffer_data(self, vertices: Vertices, instances: Instances = None):
         if not instances:

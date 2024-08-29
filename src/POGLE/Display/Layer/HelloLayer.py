@@ -1,7 +1,7 @@
 import random
 
 from POGLE.Core.Application import *
-from MineClone.MineClone import *
+from MineClone.Game import *
 from MineClone.World import _WORLD_CHUNK_AXIS_LENGTH
 game: Game = None
 class HelloLayer(Layer):
@@ -144,12 +144,6 @@ class HelloLayer(Layer):
         # self.blockShader.setMat4("uView", game.playerCam.GetViewMatrix())
         projection = self._Renderer.get_projection()
         view = game.playerCam.GetViewMatrix()
-
-        # defShader.setMat4("uModel", pentaModel)
-        # pentaMesh.draw()
-        # self.qcMesh.draw()
-        # qcMeshB.draw()
-        # wcMesh.draw()
         game.draw(projection, view)
 
     def toggle_cam_control(self) -> bool:

@@ -1,12 +1,15 @@
 import copy
 import struct
 
+import numpy as np
+
 from POGLE.Core.Application import *
 from POGLE.Physics.SpatialTree import *
 from POGLE.Renderer.Mesh import WireframeCubeMesh
 
 _QUADS_IN_BLOCK = 6
 class Block(PhysicalBox):
+    _TextureAtlas: UniformTextureAtlas | None = None
     class ID(Enum):
         Air = 0
         Grass = auto()
@@ -41,10 +44,16 @@ class Block(PhysicalBox):
 
     vertices: Vertices = None
     indices: np.array = Quad.indices
-    instanceLayout: VertexLayout = VertexLayout([
-        FloatDA.Vec2(1),
-        FloatDA.Vec2(1),
-        FloatDA.Mat4()
+    class Face:
+        texDimInstanceLayout: VertexLayout = VertexLayout([
+            FloatDA.Vec2(1),
+            FloatDA.Vec2(1)
+        ])
+        idInstanceLayout: VertexLayout = VertexLayout([
+            UShortDA.Single(1)
+        ])
+    positionInstanceLayout: VertexLayout = VertexLayout([
+        FloatDA.Vec3(1)
     ])
 
     adjBlockOffsets: dict[Side, glm.vec3] = {
@@ -74,11 +83,13 @@ class Block(PhysicalBox):
         Side.Bottom: Side.Top
     }
 
+    face_instances: list[np.short, list[float]] = [[i, np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)] for i in range(6)]
+
     def __init__(self, offset_from_chunk: glm.vec3, id: ID = ID.Air):
         from MineClone.Chunk import Chunk
         super().__init__()
         self.offset_from_chunk: glm.vec3 = offset_from_chunk
-        self.id_from_chunk: int = Chunk.block_id_from_chunk_block_pos(offset_from_chunk)
+        self.block_id_in_chunk: int = Chunk.block_id_from_chunk_block_pos(offset_from_chunk)
         self._adjBlockCache: dict[Block.Side, Block | None] = {}
         self.adjBlockPositions: dict[Block.Side, glm.vec3] = {k: v + self.offset_from_chunk for k, v in Block.adjBlockOffsets.items()}
         self.visibleSide: dict[Block.Side, bool] = copy.deepcopy(Block.visibleSide)
@@ -92,17 +103,12 @@ class Block(PhysicalBox):
 
         self.chunk: Chunk = None
 
-        self.face_instances: list | None = None
+        self.face_instances = copy.deepcopy(Block.face_instances)
 
     def link_chunk(self, chunk):
         self.chunk = chunk
         self.bounds = AABB.from_pos_size(self.chunk.get_world_pos(self.offset_from_chunk) + 0.5)
-        if not self.face_instances:
-            texQuadCube = TexQuadCube(self.pos, glm.vec2(), glm.vec2())
-            if None == Block._TextureAtlas:
-                Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
-                Block.vertices = texQuadCube.vertices
-            self.face_instances: list[np.ndarray] = split_array(texQuadCube.instances.data, 6)
+
         self.update_face_textures()
 
 
@@ -131,9 +137,9 @@ class Block(PhysicalBox):
         for i in range(6):
             if self.id is not Block.ID.Air:
                 texDims = Block._TextureAtlas.get_sub_texture(self.blockNets[self.id][i].value)
-                self.face_instances[i][:4] = [*texDims.pos, *texDims.size]
+                self.face_instances[i][1] = np.array([*texDims.pos, *texDims.size], dtype = np.float32)
             else:
-                self.face_instances[i][:4] = [0.0 for i in range(4)]
+                self.face_instances[i][1] = np.array([0.0 for i in range(4)], dtype = np.float32)
 
     def update_side_visibility(self) -> bool:
         updated = False
@@ -184,18 +190,20 @@ class Block(PhysicalBox):
         else:
             return self.adjBlock(Block.Side.South)
 
-    def get_face_instance_data(self) -> np.ndarray:
+    def get_instance_data(self) -> list[np.array] | list[None]:
         if self.is_solid:
-            instance_data = np.array([])
+            face_ids: np.array = np.array([], dtype = np.short)
+            face_tex_dims: np.array = np.array([], dtype = np.float32)
             cnt = 0
             for side in Block.Side:
                 if self.visibleSide[side]:
                     cnt+=1
-                    instance_data = np.concatenate((instance_data, self.face_instances[side.value]), dtype=self.face_instances[side.value].dtype)
+                    face_ids = np.append(face_ids, self.face_instances[side.value][0])
+                    face_tex_dims = np.append(face_tex_dims, self.face_instances[side.value][1])
             if cnt == 0:
-                return None
-            return instance_data
-        return None
+                return [None, None, None]
+            return [face_ids, face_tex_dims, np.concatenate([np.array(self.pos, dtype=np.float32) for id in face_ids])]
+        return [None, None, None]
 
     def get_wireframe_cube_mesh(self) -> WireframeCubeMesh | None:
         if self.is_solid:
@@ -280,3 +288,30 @@ class Block(PhysicalBox):
 
         return basic_info_size + total_face_size
 
+class BlockMesh(Mesh):
+    def __init__(self, block_face_ids: np.array, block_face_tex_dims: np.array, block_positions: np.array):
+        super().__init__(Shapes.TexQuad, textures=Block._TextureAtlas,
+                         instances=Instances(block_face_tex_dims, Block.Face.texDimInstanceLayout, True))
+        self.VAO.VBO.bind()
+        self.VAO.VBO.print_data()
+        self.VAO.VBO.unbind()
+
+        self.bind()
+
+        self.block_face_id_vbo = VertexBuffer(dtype=GLushort)
+        self.block_face_id_vbo.bind()
+        face_id_instances = Instances(block_face_ids, Block.Face.idInstanceLayout, True)
+        face_id_instances.set_vertex_attrib_pointers(self.instances.nextID())
+        self.block_face_id_vbo.buffer_data(face_id_instances)
+        self.block_face_id_vbo.print_data()
+        self.block_face_id_vbo.unbind()
+
+        self.block_position_vbo = VertexBuffer()
+        self.block_position_vbo.bind()
+        position_instances = Instances(block_positions, Block.positionInstanceLayout, True)
+        position_instances.set_vertex_attrib_pointers(face_id_instances.nextID())
+        self.block_position_vbo.buffer_data(position_instances)
+        self.block_position_vbo.print_data()
+        self.block_position_vbo.unbind()
+
+        self.unbind()

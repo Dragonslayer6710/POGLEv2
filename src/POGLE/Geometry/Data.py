@@ -85,13 +85,13 @@ class _DataAttribute:
                 glVertexAttribPointer(id + c, subSize, self.dtype, self.normalized, stride,
                                       ctypes.c_void_p(offset + subBytes * c))
                 glVertexAttribDivisor(id + c, self.divisor)
-               # print(
-               #     f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
+                print(
+                   f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
         else:
             glEnableVertexAttribArray(id)
             glVertexAttribPointer(id, self.size, self.dtype, self.normalized, stride, ctypes.c_void_p(offset))
-            # print(
-            #    f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
+            print(
+               f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
             if self.divisor:
                 glVertexAttribDivisor(id, self.divisor)
 
@@ -166,9 +166,10 @@ class DataLayout:
             dataAttribs: list[_DataAttribute] = [dataAttribs]
         self.dataAttribs: list[_DataAttribute] = dataAttribs
         self.stride = 0
+        self.count = 0
         for vertAttrib in self.dataAttribs:
             self.stride += vertAttrib.bytes
-        self.count = len(dataAttribs)
+            self.count += vertAttrib.size
 
 
 

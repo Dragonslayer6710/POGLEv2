@@ -24,7 +24,9 @@ class Chunk(PhysicalBox):
         North = auto()
         NorthWest = auto()
 
-    block_instances: list[np.ndarray] = [None] * _BLOCKS_IN_CHUNK
+    block_face_ids: list[np.array] = [None] * _BLOCKS_IN_CHUNK
+    block_face_tex_dims: list[np.array] = [None] * _BLOCKS_IN_CHUNK
+    block_positions: list[np.array] = [None] * _BLOCKS_IN_CHUNK
 
     neighbourOffsets: dict[Cardinal, glm.vec2] = {
         Cardinal.West: glm.vec2(-1, 0),
@@ -57,7 +59,10 @@ class Chunk(PhysicalBox):
         self._blocks: list[Block] = []
         self.solid_blocks: list[int | None] = copy.deepcopy(Chunk.solid_blocks)
 
-        self.block_instances = copy.deepcopy(Chunk.block_instances)
+        self.block_face_ids = copy.deepcopy(Chunk.block_face_ids)
+        self.block_face_tex_dims = copy.deepcopy(Chunk.block_face_tex_dims)
+        self.block_positions = copy.deepcopy(Chunk.block_positions)
+
         self.num_solid_blocks = 0
 
         self.normal_chunk_pos: glm.vec2 = chunk_array_offset
@@ -106,19 +111,19 @@ class Chunk(PhysicalBox):
 
     def update_block_in_chunk(self, block: Block):
         if block.is_solid:
-            if None is self.solid_blocks[block.id_from_chunk]:
-                self.solid_blocks[block.id_from_chunk] = block.id_from_chunk
+            if None is self.solid_blocks[block.block_id_in_chunk]:
+                self.solid_blocks[block.block_id_in_chunk] = block.block_id_in_chunk
                 self.num_solid_blocks += 1
                 self.octree.insert(block)
         else:
-            if self.solid_blocks[block.id_from_chunk] == block.id_from_chunk:
+            if self.solid_blocks[block.block_id_in_chunk] == block.block_id_in_chunk:
                 self.num_solid_blocks -= 1
-                self.solid_blocks[block.id_from_chunk] = None
+                self.solid_blocks[block.block_id_in_chunk] = None
                 self.octree.remove(block)
-        if self.solid_blocks[block.id_from_chunk]:
-            self.block_instances[block.id_from_chunk] = block.get_face_instance_data()
+        if self.solid_blocks[block.block_id_in_chunk]:
+            self.set_block_instance(block)
         else:
-            self.block_instances[block.id_from_chunk] = None
+            self.set_block_instance(block, True)
         for side in Block.Side:
             adjBlock = block.adjBlock(side)
             if adjBlock:
@@ -131,7 +136,7 @@ class Chunk(PhysicalBox):
                         adjBlock.reveal_face(opposite)
                     else:
                         continue
-                    self.block_instances[adjBlock.id_from_chunk] = adjBlock.get_face_instance_data()
+                    self.set_block_instance(adjBlock)
 
         if self.world:
             self.world.update_chunk_in_world(self)
@@ -222,18 +227,28 @@ class Chunk(PhysicalBox):
         for chunkBlockID in filter(None, self.solid_blocks):
             block: Block = self.blocks(chunkBlockID)
             if block.update_side_visibility():
-                self.block_instances[chunkBlockID] = block.get_face_instance_data()
+                self.set_block_instance(block)
                 updated = True
         return updated
 
-    def set_block_instance(self, block: Block):
-        self.block_instances[block.id_from_chunk] = block.get_face_instance_data()
+    def set_block_instance(self, block: Block, clear=False):
+        (
+            self.block_face_ids[block.block_id_in_chunk],
+            self.block_face_tex_dims[block.block_id_in_chunk],
+            self.block_positions[block.block_id_in_chunk]
+        ) = block.get_instance_data() if not clear else (None, None, None)
 
-    def get_block_face_instance_data(self):
-        block_instances = list(filter((None).__ne__, self.block_instances))
-        if not block_instances:
-            return None
-        return np.concatenate(block_instances, dtype=block_instances[0].dtype)
+    def get_block_and_face_instance_data(self) -> list[np.array] | list[None]:
+        block_face_ids = list(filter((None).__ne__, self.block_face_ids))
+        block_face_tex_dims = list(filter((None).__ne__, self.block_face_tex_dims))
+        block_positions = list(filter((None).__ne__, self.block_positions))
+        if not block_positions:
+            return [None, None, None]
+        return [
+            np.concatenate(block_face_ids),
+            np.concatenate(block_face_tex_dims),
+            np.concatenate(block_positions)
+        ]
 
     def get_chunks_to_render(self, renderedChunks: list[list], chunksLeftFromHere: int,
                              listPos: glm.vec2 = None, visitedChunks=None):
