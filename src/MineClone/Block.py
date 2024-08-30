@@ -50,7 +50,7 @@ class Block(PhysicalBox):
             FloatDA.Vec2(1)
         ])
         idInstanceLayout: VertexLayout = VertexLayout([
-            UShortDA.Single(1)
+            IntDA.Single(1)
         ])
     positionInstanceLayout: VertexLayout = VertexLayout([
         FloatDA.Vec3(1)
@@ -192,13 +192,13 @@ class Block(PhysicalBox):
 
     def get_instance_data(self) -> list[np.array] | list[None]:
         if self.is_solid:
-            face_ids: np.array = np.array([], dtype = np.short)
+            face_ids: np.array = np.array([], dtype = np.int32)
             face_tex_dims: np.array = np.array([], dtype = np.float32)
             cnt = 0
             for side in Block.Side:
                 if self.visibleSide[side]:
                     cnt+=1
-                    face_ids = np.append(face_ids, self.face_instances[side.value][0])
+                    face_ids = np.append(face_ids, self.face_instances[side.value][0]).astype(np.int32)
                     face_tex_dims = np.append(face_tex_dims, self.face_instances[side.value][1])
             if cnt == 0:
                 return [None, None, None]
@@ -292,26 +292,24 @@ class BlockMesh(Mesh):
     def __init__(self, block_face_ids: np.array, block_face_tex_dims: np.array, block_positions: np.array):
         super().__init__(Shapes.TexQuad, textures=Block._TextureAtlas,
                          instances=Instances(block_face_tex_dims, Block.Face.texDimInstanceLayout, True))
-        self.VAO.VBO.bind()
-        self.VAO.VBO.print_data()
-        self.VAO.VBO.unbind()
-
         self.bind()
 
-        self.block_face_id_vbo = VertexBuffer(dtype=GLushort)
+        # Block Face ID VBO
+        self.block_face_id_vbo = VertexBuffer(dtype=GLint)
         self.block_face_id_vbo.bind()
         face_id_instances = Instances(block_face_ids, Block.Face.idInstanceLayout, True)
         face_id_instances.set_vertex_attrib_pointers(self.instances.nextID())
         self.block_face_id_vbo.buffer_data(face_id_instances)
-        self.block_face_id_vbo.print_data()
         self.block_face_id_vbo.unbind()
 
+        # Block Position VBO
         self.block_position_vbo = VertexBuffer()
         self.block_position_vbo.bind()
         position_instances = Instances(block_positions, Block.positionInstanceLayout, True)
         position_instances.set_vertex_attrib_pointers(face_id_instances.nextID())
         self.block_position_vbo.buffer_data(position_instances)
-        self.block_position_vbo.print_data()
         self.block_position_vbo.unbind()
 
+        # Final unbinding of VAO
         self.unbind()
+

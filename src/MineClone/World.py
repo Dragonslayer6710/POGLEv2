@@ -374,7 +374,7 @@ class WorldRenderer:
         if len(block_positions) == 0:
             return np.array([]), np.array([]), np.array([])
         return (
-            np.concatenate(block_face_ids).astype(np.ushort),
+            np.concatenate(block_face_ids).astype(np.int32),
             np.concatenate(block_face_tex_dims, dtype=np.float32),
             np.concatenate(block_positions, dtype=np.float32)
         )

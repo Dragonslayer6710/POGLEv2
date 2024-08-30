@@ -78,20 +78,31 @@ class _DataAttribute:
 
     def set_vertex_attrib_pointer(self, id: GLuint, stride: GLsizei, offset: GLsizei):
         if self.matData:
+            # For matrix data, set up each attribute separately
             subSize = int(self.size / self.matData.rows)
             subBytes = int(self.bytes / self.matData.rows)
             for c in range(self.matData.cols):
-                glEnableVertexAttribArray(id+c)
-                glVertexAttribPointer(id + c, subSize, self.dtype, self.normalized, stride,
-                                      ctypes.c_void_p(offset + subBytes * c))
+                glEnableVertexAttribArray(id + c)
+                if self.dtype == GL_INT:
+                    # Use integer pointer setup
+                    glVertexAttribIPointer(id + c, subSize, self.dtype, stride, ctypes.c_void_p(offset + subBytes * c))
+                else:
+                    # Use floating-point pointer setup
+                    glVertexAttribPointer(id + c, subSize, self.dtype, self.normalized, stride,
+                                          ctypes.c_void_p(offset + subBytes * c))
                 glVertexAttribDivisor(id + c, self.divisor)
-                print(
-                   f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
+                #print(
+                #    f"\nPointer Set:\t{{id: {id + c} | size: {subSize} | bytes: {subBytes} | dtype: {self.dtype} | normalized: {self.normalized} | stride: {stride} | offset: {offset + subBytes * c} | divisor: {self.divisor}}}")
         else:
             glEnableVertexAttribArray(id)
-            glVertexAttribPointer(id, self.size, self.dtype, self.normalized, stride, ctypes.c_void_p(offset))
-            print(
-               f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalised: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
+            if self.dtype == GL_INT:
+                # Use integer pointer setup
+                glVertexAttribIPointer(id, self.size, self.dtype, stride, ctypes.c_void_p(offset))
+            else:
+                # Use floating-point pointer setup
+                glVertexAttribPointer(id, self.size, self.dtype, self.normalized, stride, ctypes.c_void_p(offset))
+            #print(
+            #    f"\nPointer Set:\t{{id: {id} | size: {self.size} | bytes: {self.bytes} | dtype: {self.dtype} | normalized: {self.normalized} | stride: {stride} | offset: {offset} | divisor: {self.divisor}}}")
             if self.divisor:
                 glVertexAttribDivisor(id, self.divisor)
 

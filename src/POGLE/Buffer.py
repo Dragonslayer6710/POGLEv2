@@ -26,7 +26,7 @@ class Buffer:
         return feedback
 
     def print_data(self):
-        print(f"Buffering {self.stored_size} bytes of data: {list(self.get_data())}")  # Debugging info
+        print(f"Buffering {self.stored_size} bytes of data:\n{list(self.get_data())}")  # Debugging info
 
 
     def __del__(self):

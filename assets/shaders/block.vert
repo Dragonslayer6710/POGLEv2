@@ -3,7 +3,7 @@
 layout (location = 0) in vec2 aLocalPos;
 layout (location = 1) in vec2 aTexUV;
 layout (location = 2) in vec2 aTexPos;
-layout (location = 3) in uint aTexSize;
+layout (location = 3) in vec2 aTexSize;
 layout (location = 4) in int aSideID;
 layout (location = 5) in vec3 aWorldPos;
 
