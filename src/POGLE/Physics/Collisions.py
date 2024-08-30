@@ -170,7 +170,7 @@ class AABB(Collider):
         # Return None if no intersection
         return None
 
-    def intersectSegment(self, ray: Ray) -> list[Hit] | None:
+    def intersectSegment_old(self, ray: Ray) -> list[Hit] | None:
         # X Axis
         tMin = (self._bounds[int(ray.sign.x)].x - ray.start.x) * ray.invDir.x
         tMax = (self._bounds[int(1 - ray.sign.x)].x - ray.start.x) * ray.invDir.x
@@ -220,7 +220,41 @@ class AABB(Collider):
         self.hitRecall[ray] = [nearHit, farHit]
         return [nearHit, farHit]
 
-    def intersectAABB(self, box: AABB) -> Hit:
+    def intersectSegment(self, ray: Ray) -> list[Hit] | None:
+        # Compute tMin and tMax for X, Y, and Z axes
+        tMin_x = (self._bounds[int(ray.sign.x)].x - ray.start.x) * ray.invDir.x
+        tMax_x = (self._bounds[1 - int(ray.sign.x)].x - ray.start.x) * ray.invDir.x
+
+        tMin_y = (self._bounds[int(ray.sign.y)].y - ray.start.y) * ray.invDir.y
+        tMax_y = (self._bounds[1 - int(ray.sign.y)].y - ray.start.y) * ray.invDir.y
+
+        tMin_z = (self._bounds[int(ray.sign.z)].z - ray.start.z) * ray.invDir.z
+        tMax_z = (self._bounds[1 - int(ray.sign.z)].z - ray.start.z) * ray.invDir.z
+
+        # Compute overlap intervals
+        tMin = max(min(tMin_x, tMax_x), min(tMin_y, tMax_y), min(tMin_z, tMax_z))
+        tMax = min(max(tMin_x, tMax_x), max(tMin_y, tMax_y), max(tMin_z, tMax_z))
+
+        # Early exit if there is no intersection
+        if tMin > tMax or tMax <= 0 or tMin >= 1:
+            return None
+
+        # Calculate the hit points
+        nearHit = Hit(self)
+        nearHit.time = clamp(tMin, 0, 1)
+        nearHit.delta = (1.0 - nearHit.time) * -ray.dir
+        nearHit.pos = ray.start + nearHit.time * ray.dir
+
+        farHit = Hit(self)
+        farHit.time = clamp(tMax, 0, 1)
+        farHit.delta = (1.0 - farHit.time) * -ray.dir
+        farHit.pos = ray.start + farHit.time * ray.dir
+
+        # Store and return the hits
+        self.hitRecall[ray] = [nearHit, farHit]
+        return [nearHit, farHit]
+
+    def intersectAABB_old(self, box: AABB) -> Hit:
         delta = box.pos - self.pos
         sign = glm.sign(delta)
         overlap = (box.half + self.half) - glm.abs(delta)
@@ -273,6 +307,45 @@ class AABB(Collider):
             return hit
 
         return None
+
+    def intersectAABB(self, box: AABB) -> Hit:
+        # Compute deltas
+        delta = box.pos - self.pos
+
+        # Compute overlaps
+        overlap_x = (box.half.x + self.half.x) - abs(delta.x)
+        overlap_y = (box.half.y + self.half.y) - abs(delta.y)
+        overlap_z = (box.half.z + self.half.z) - abs(delta.z)
+
+        # Early exit if there's no overlap
+        if overlap_x <= 0 or overlap_y <= 0 or overlap_z <= 0:
+            return None
+
+        # Determine the axis of minimum overlap directly
+        min_overlap = min(overlap_x, overlap_y, overlap_z)
+
+        if min_overlap == overlap_x:
+            sign_x = 1 if delta.x >= 0 else -1
+            hit = Hit(self)
+            hit.delta.x = overlap_x * sign_x
+            hit.normal.x = sign_x
+            hit.pos = glm.vec3(self.pos.x + self.half.x * sign_x, box.pos.y, box.pos.z)
+        elif min_overlap == overlap_y:
+            sign_y = 1 if delta.y >= 0 else -1
+            hit = Hit(self)
+            hit.delta.y = overlap_y * sign_y
+            hit.normal.y = sign_y
+            hit.pos = glm.vec3(box.pos.x, self.pos.y + self.half.y * sign_y, box.pos.z)
+        else:
+            sign_z = 1 if delta.z >= 0 else -1
+            hit = Hit(self)
+            hit.delta.z = overlap_z * sign_z
+            hit.normal.z = sign_z
+            hit.pos = glm.vec3(box.pos.x, box.pos.y, self.pos.z + self.half.z * sign_z)
+
+        # Store the result in the recall dictionary
+        self.hitRecall[box] = hit
+        return hit
 
     def contains(self, box: AABB) -> bool:
         # Check if the entire 'box' is within the 'self' bounds
