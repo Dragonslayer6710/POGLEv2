@@ -178,17 +178,18 @@ class Block(PhysicalBox):
 
     def get_adjblock_at_segment_intersect(self, intersect: glm.vec3):
         if intersect.x == self.max.x:
-            return self.adjBlock(Block.Side.East)
+            side = Block.Side.East
         elif intersect.x == self.min.x:
-            return self.adjBlock(Block.Side.West)
+            side = Block.Side.West
         elif intersect.y == self.max.y:
-            return self.adjBlock(Block.Side.Top)
+            side = Block.Side.Top
         elif intersect.y == self.min.y:
-            return self.adjBlock(Block.Side.Bottom)
+            side = Block.Side.Bottom
         elif intersect.z == self.min.z:
-            return self.adjBlock(Block.Side.North)
+            side = Block.Side.North
         else:
-            return self.adjBlock(Block.Side.South)
+            side = Block.Side.South
+        return self.adjBlock(side)
 
     def get_instance_data(self) -> list[np.array] | list[None]:
         if self.is_solid:

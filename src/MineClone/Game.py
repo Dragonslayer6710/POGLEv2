@@ -30,8 +30,7 @@ class Game:
         self.world: World = World()
         self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
         self.player: Player = Player(self.world, glm.vec3(0,self.world.max.y+2,0))
-
-        self.crosshairMesh = CrosshairMesh(glm.vec2(0.5))
+        self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
 
         self.MatricesUBO: UniformBuffer = UniformBuffer()
         self.matUB: UniformBlock = UniformBlock.create([glm.mat4(), glm.mat4()])

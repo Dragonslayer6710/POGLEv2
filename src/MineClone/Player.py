@@ -124,12 +124,11 @@ class Player(PhysicalBox):
     def handle_input(self):
         self.moveVector: glm.vec3 = glm.vec3()
         for ctrl in GetBoundControls():
-            if ctrl.GetInputState().value:
-                ctrlType = ctrl.GetType()
-                if ctrlType == CTRL.Type.MOVEMENT:
-                    self.handle_movement_input(ctrl)
-                elif ctrlType == CTRL.Type.ACTION:
-                    self.handle_action_input(ctrl)
+            ctrlType = ctrl.GetType()
+            if ctrlType == CTRL.Type.MOVEMENT:
+                self.handle_movement_input(ctrl)
+            elif ctrlType == CTRL.Type.ACTION:
+                self.handle_action_input(ctrl)
         if 0 == self.moveVector.x:
             self.velocity.x = 0
         if self.isFlying:
@@ -141,6 +140,8 @@ class Player(PhysicalBox):
             self.acceleration += self.moveVector * self.moveSpeed
 
     def handle_movement_input(self, ctrl: Control):
+        if not ctrl.GetInputState().value:
+            return
         id = ctrl.GetID()
         if id.value < 4:
             direction = -1 if id.value % 2 else 1
@@ -148,8 +149,9 @@ class Player(PhysicalBox):
                 if self.isFlying:
                     vectorMod: glm.vec3 = self.camFront
                 else:
-                    vectorMod: glm.vec3 = glm.normalize(self.camFront)
-                    vectorMod.y = 0
+                    vectorMod: glm.vec3 = glm.vec3(self.camFront.x, 0, self.camFront.z)
+                    vectorMod = glm.normalize(vectorMod)  # Normalize after zeroing out the y component
+
             else:
                 vectorMod: glm.vec3 = self.camera.Right
             self.moveVector += direction * vectorMod
@@ -175,26 +177,28 @@ class Player(PhysicalBox):
             self.interactCooldown = 10.0
             if self.targetFaceBlockSpace:
                 if not self.targetFaceBlockSpace.is_solid:
-                    self.targetFaceBlockSpace.set(Block.ID(random.randrange(1, len(Block.ID))))
+                    if not self.targetFaceBlockSpace.bounds.intersectAABB(self.bounds):
+                        self.targetFaceBlockSpace.set(Block.ID(random.randrange(1, len(Block.ID))))
 
     def handle_action_input(self, ctrl: Control):
         id = ctrl.GetID()
+
         if id == CTRL.ID.Action.SPRINT:
             if ctrl.GetInputState() == Input.State.RELEASE:
                 if self.isSprinting:
                     self.isSprinting = False
-                    if self.isCrouching:
-                        self.moveSpeed = _PLAYER_CROUCH_SPEED
-                    else:
-                        self.moveSpeed = _PLAYER_WALK_SPEED
-            else:
+                    self.moveSpeed = _PLAYER_CROUCH_SPEED if self.isCrouching else _PLAYER_WALK_SPEED
+            elif ctrl.GetInputState() == Input.State.PRESS:
                 if not self.isSprinting and not self.isCrouching:
                     self.isSprinting = True
-                    self.moveSpeed = True
-        elif id == CTRL.ID.Action.ATTACK:
-            self.attack()
-        elif id == CTRL.ID.Action.INTERACT:
-            self.interact()
+                    self.moveSpeed = _PLAYER_SPRINT_SPEED  # Set to sprint speed instead of True
+        elif ctrl.GetInputState().value:
+            if id == CTRL.ID.Action.ATTACK:
+                self.attack()
+
+            elif id == CTRL.ID.Action.INTERACT:
+                self.interact()
+
     def handle_collision(self):
         # Get colliding blocks within the current bounds
         collidingBlocks: set[Block] = self.world.query_aabb_blocks(self.bounds)
@@ -311,10 +315,12 @@ class Player(PhysicalBox):
 
         ray: Ray = Ray.from_start_dir(self.eyePos, self.reachLineDelta)
         self.targetBlock = None
+        self.targetFaceBlockSpace = None
         nearBest = np.inf
         farBest = np.inf
         nearPos: glm.vec3 = None
         hitBlocks: set[Block] = self.world.query_segment_blocks(ray)
+
         for block in hitBlocks:
             hits: Tuple[Hit, Hit] = block.recallHit(ray)
             nearHit, farHit = hits
@@ -331,16 +337,12 @@ class Player(PhysicalBox):
                 if farHit.time > farBest:
                     continue
 
-            #if abs(ray.dir.y) > self.blockReach[1]:
-            #    continue
-
-            #if glm.length(glm.vec2(ray.dir.xz)) > self.blockReach[0]:
-            #    continue
             nearBest = min(nearBest, nearHit.time)
             farBest = min(farBest, farHit.time)
 
             nearPos = nearHit.pos
             self.targetBlock = block
+
         if self.targetBlock:
             space = self.targetBlock.get_adjblock_at_segment_intersect(nearPos)
             if space:
@@ -350,8 +352,6 @@ class Player(PhysicalBox):
     def draw(self, projection: glm.mat4, view: glm.mat4):
         if not self.firstPersonCamera:
             self.playerMesh.draw(projection, view)
-        #if self.collidingBlockPositions:
-        #    self.collidingBlockWireCubesMesh.draw(projection, view)
         if self.targetBlock:
             tbwfCubeMesh = self.targetBlockWireframeCubeMesh
             if tbwfCubeMesh:

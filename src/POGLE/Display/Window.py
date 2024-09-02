@@ -42,15 +42,17 @@ class Window:
     _CentrePos: glm.vec2
     _CursorHidden: bool
     _ImGuiLayerBlock: bool
-    class WindowData:
+    class Data:
         def __init__(self, title: str, width: int, height: int):
             self.Title: str = title
             self.Width: int = width
             self.Height: int = height
+            self.AspectRatio: int = width / height
             self.VSync: bool = False
             self.EventCallback: Callable[[Event], None] = None
 
     def __init__(self, props: WindowProps = defaultWindowProps):
+        self._Data: Window.Data | None = None
         self._Init(props)
         self._CursorHidden = False
         self._ImGuiLayerBlock = False
@@ -90,6 +92,9 @@ class Window:
 
     def get_height(self)->int:
         return self._Data.Height
+
+    def get_aspect_ratio(self) -> float:
+        return self._Data.AspectRatio
 
     def set_event_callback(self, callback: Callable[[Event], None]):
         self._Data.EventCallback = callback
@@ -137,7 +142,7 @@ class Window:
 
     def _Init(self, props: WindowProps):
         global GLFWwindowCount
-        self._Data: Window.WindowData = Window.WindowData(props.Title, props.Width, props.Height)
+        self._Data: Window.Data = Window.Data(props.Title, props.Width, props.Height)
         self.recalculate_centre_pos()
 
         if not GLFWwindowCount:

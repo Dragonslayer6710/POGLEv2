@@ -5,8 +5,8 @@ from MineClone.Block import *
 from MineClone.Block import _QUADS_IN_BLOCK
 from MineClone.Block import _QUADS_IN_BLOCK
 
-_CHUNK_WIDTH = 2
-_CHUNK_HEIGHT = 2
+_CHUNK_WIDTH = 8
+_CHUNK_HEIGHT = 8
 _CHUNK_SIZE = glm.vec3(_CHUNK_WIDTH, _CHUNK_HEIGHT, _CHUNK_WIDTH)
 _CHUNK_SIZE_HALF = _CHUNK_SIZE / 2
 

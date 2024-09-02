@@ -143,7 +143,7 @@ class World(PhysicalBox):
             if self.not_empty_chunks[chunk.chunk_id] == chunk.chunk_id:
                 self.not_empty_chunks[chunk.chunk_id] = None
                 self.quadtree.remove(chunk)
-        if self.not_empty_chunks[chunk.chunk_id]:
+        if self.not_empty_chunks[chunk.chunk_id] is not None:
             self.set_chunk_instance(chunk)
         else:
             self.set_chunk_instance(chunk, True)
@@ -332,21 +332,53 @@ class WorldRenderer:
         self._set_rendered_chunk_bounds()
 
     def _set_rendered_chunk_bounds(self):
-        size: int | glm.vec3 = 2 * self._render_distance
-        size = glm.vec3(size, 0, size)
-        pos: glm.vec3 = glm.vec3(self._origin_chunk_pos[0], 0, self._origin_chunk_pos[1])
+        # Calculate size and position vectors
+        size = 2 * self._render_distance
+        size_vec = glm.vec3(size, 0, size)
+        pos_vec = glm.vec3(self._origin_chunk_pos[0], 0, self._origin_chunk_pos[1])
 
-        self._render_bounds = AABB.from_pos_size(pos, size)
+        # Define the render bounds
+        self._render_bounds = AABB.from_pos_size(pos_vec, size_vec)
         self._rMin = self._render_bounds.min
         self._rMax = self._render_bounds.max
-        self._xRenderRange = range(int(self._rMin.x), int(self._rMax.x)+1)
-        self._zRenderRange = range(int(self._rMin.z), int(self._rMax.z)+1)
+
+        # Calculate ranges with clamping
+        start_x = max(0, int(self._rMin.x))
+        end_x = min(_CHUNKS_IN_ROW, int(self._rMax.x) + 1)
+        start_z = max(0, int(self._rMin.z))
+        end_z = min(_CHUNKS_IN_ROW, int(self._rMax.z) + 1)
+
+        self._xRenderRange = range(start_x, end_x)
+        self._zRenderRange = range(start_z, end_z)
+
+        print(f"Calculated bounds: start_x: {start_x}, end_x: {end_x}, start_z: {start_z}, end_z: {end_z}")
+        print(f"Clamped _xRenderRange: {list(self._xRenderRange)}")
+        print(f"Clamped _zRenderRange: {list(self._zRenderRange)}")
+
         self._set_rendered_chunk_ids()
 
     def _set_rendered_chunk_ids(self):
-        self.rendered_chunk_ids = [
-            self._chunk_ids_in_world[x][z] if x > -1 and z > -1 and x < _CHUNKS_IN_ROW and z < _CHUNKS_IN_ROW else None for x in self._xRenderRange for z in self._zRenderRange
-        ]
+        print(f"Using _xRenderRange: {list(self._xRenderRange)}")
+        print(f"Using _zRenderRange: {list(self._zRenderRange)}")
+
+        # Preallocate the list for better performance
+        num_chunks = len(self._xRenderRange) * len(self._zRenderRange)
+        self.rendered_chunk_ids = [None] * num_chunks
+
+        # Populate the list with chunk IDs
+        index = 0
+        for x in self._xRenderRange:
+            for z in self._zRenderRange:
+                if 0 <= x < _CHUNKS_IN_ROW and 0 <= z < _CHUNKS_IN_ROW:
+                    chunk_id = self._chunk_ids_in_world[x][z]
+                    print(f"Chunk ID at ({x}, {z}): {chunk_id}")
+                    self.rendered_chunk_ids[index] = chunk_id
+                else:
+                    print(f"Out of bounds: ({x}, {z})")
+                index += 1
+
+        print(f"Final rendered_chunk_ids: {self.rendered_chunk_ids}")
+
         self._build_mesh()
 
     def update_origin(self, originPos: glm.vec3):
@@ -355,10 +387,12 @@ class WorldRenderer:
         if not chunk_pos == self._origin_chunk_pos:  # New position is outside of origin chunk
             self._set_origin_chunk_pos(chunk_pos)
             self._set_rendered_chunk_bounds()
+
     def get_instance_data(self):
         block_face_ids = []
         block_face_tex_dims = []
         block_positions = []
+
         for rendered_chunk_id in self.rendered_chunk_ids:
             (
                 ids,
