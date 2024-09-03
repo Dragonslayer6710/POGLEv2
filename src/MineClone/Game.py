@@ -27,13 +27,11 @@ class Game:
         #        dill.dump(self.world, f)
         # with open("worldfile.bin","wb") as f:
         #     f.write(self.world.serialize())
-        self.world: World = World()
-        self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
-        self.player: Player = Player(self.world, glm.vec3(0,self.world.max.y+2,0))
-        self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
+        self.projection: glm.mat4 = glm.mat4()
+        self.view: glm.mat4 = glm.mat4()
 
         self.MatricesUBO: UniformBuffer = UniformBuffer()
-        self.matUB: UniformBlock = UniformBlock.create([glm.mat4(), glm.mat4()])
+        self.matUB: UniformBlock = UniformBlock.create([self.projection, self.view])
 
         self.BlockSidesUBO: UniformBuffer = UniformBuffer()
         self.blockSidesUB: UniformBlock = UniformBlock.create(
@@ -53,28 +51,53 @@ class Game:
         self.BlockSidesUBO.unbind()
         self.BlockSidesUBO.bind_block(1)
 
+        self.world: World = World()
+        self.player: Player = Player(self.world, glm.vec3(0,self.world.max.y+2,0))
+        self.world.update(self.playerCam.get_frustum())
+        self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
+        self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
+
     @property
     def playerCam(self) -> Camera:
         return self.player.camera
 
-    def update(self, deltaTime: float):
+    def update(self, deltaTime: float, projection: glm.mat4, view: glm.mat4):
         self.player.update(deltaTime)
         self.worldRenderer.update_origin(self.player.pos)
 
+        dataElements = []
+        newProjection = self.projection != projection
+        newView = self.view != view
+        if newProjection:
+            self.projection = projection
+            dataElements.append(self.projection)
+        if newView:
+            self.view = view
+            dataElements.append(self.view)
+        numElements = len(dataElements)
+        if numElements:
+            self.MatricesUBO.bind()
+            if numElements == 2:
+                self.matUB.setData([projection, view])
+                self.MatricesUBO.buffer_data(self.matUB.bytes, self.matUB.data)
+            else:
+                data = DataPoint.prepare_data(dataElements, DataLayout([FloatDA.Mat4()]))
+                offset = 0
+                if newView:
+                    self.world.update(self.playerCam.get_frustum(view, projection))
+                    offset = 64  # Offset to edit only the view matrix
+                self.MatricesUBO.buffer_sub_data(offset, 64, data)
+            self.MatricesUBO.unbind()
+            self.MatricesUBO.bind_block()
+
     shader = None
     mesh = None
-    def draw(self, projection: glm.mat4, view: glm.mat4):
-        self.MatricesUBO.bind()
-        self.matUB.setData([projection, view])
-        self.MatricesUBO.buffer_data(self.matUB.bytes, self.matUB.data)
-        self.MatricesUBO.unbind()
-        self.MatricesUBO.bind_block()
-
-        if self.shader == None:
-            self.worldRenderer.worldBlockShader = ShaderProgram("block", "block")
-            self.worldRenderer.worldBlockShader.bind_uniform_block("Matrices")
-            self.worldRenderer.worldBlockShader.bind_uniform_block("BlockSides")
-            self.shader = 1
+    def draw(self):
+        # if self.shader == None:
+        #     self.worldRenderer.worldBlockShader = ShaderProgram("block", "block")
+        #     self.worldRenderer.worldBlockShader.bind_uniform_block("Matrices")
+        #     self.worldRenderer.worldBlockShader.bind_uniform_block("BlockSides")
+        #     self.shader = 1
         # if self.mesh is None:
         #     class Bk:
         #         cnt = 0
@@ -130,6 +153,6 @@ class Game:
         #
         # self.mesh.draw(self.shader)
 
-        self.worldRenderer.draw(projection, view)
-        self.player.draw(projection, view)
+        self.worldRenderer.draw()
+        self.player.draw()
         self.crosshairMesh.draw()

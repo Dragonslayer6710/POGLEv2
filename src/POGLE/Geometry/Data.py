@@ -217,20 +217,26 @@ class DataPoint:
         self.setData(dataElements)
 
     def setData(self, dataElements):
-        self.data = []
-        self.bytes = 0
+        bytes = [0]
+        self.data = self.prepare_data(dataElements, self.layout, bytes)
+        self.bytes = bytes[0]
+
+
+    @staticmethod
+    def prepare_data(dataElements, layout: DataLayout, bytes: list | None = None) -> np.ndarray:
+        data = []
         for i in range(len(dataElements)):
             dataElement = dataElements[i]
-            vertAttrib = self.layout.dataAttribs[i]
-
-            self.bytes += vertAttrib.bytes
+            vertAttrib = layout.dataAttribs[i]
+            if bytes:
+                bytes[0] += vertAttrib.bytes
             dtype = _typeDict[vertAttrib.dtype]
             isMat = type(dataElement) == glm.mat4
             dataElement = np.array(dataElement, dtype)
             if isMat:
                 dataElement = dataElement.reshape(4, 4).T
-            self.data = np.concatenate((self.data, dataElement.flatten()), dtype=np.float32)
-
+            data = np.concatenate((data, dataElement.flatten()), dtype=np.float32)
+        return data
 
 class DataPoints:
     layout: DataLayout

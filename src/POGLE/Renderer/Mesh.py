@@ -34,7 +34,7 @@ class Mesh:
         if self.texture:
             self.texture.unbind()
 
-    def draw(self, shaderProgram: ShaderProgram, projection: glm.mat4 = None, view: glm.mat4 = None):
+    def draw(self, shaderProgram: ShaderProgram):
         shaderProgram.use()
 
         self.bind()
@@ -62,10 +62,10 @@ class WireframeCubeMesh(Mesh):
         self.shader.bind_uniform_block("BlockSides")
         super().__init__(wfqCube.vertices, wfqCube.indices, instances=instances, primitive=GL_LINES)
 
-    def draw(self, projection: glm.mat4, view: glm.mat4):
+    def draw(self):
         glLineWidth(self.thickness)
         glDisable(GL_DEPTH_TEST)
-        super().draw(self.shader, projection, view)
+        super().draw(self.shader)
         glEnable(GL_DEPTH_TEST)
         glLineWidth(1.0)
 
@@ -88,8 +88,8 @@ class CubeMesh(Mesh):
         cube = Cube(color, alpha, modelMatrix)
         super().__init__(cube, instances=cube.instances)
 
-    def draw(self, projection: glm.mat4, view: glm.mat4):
-        super().draw(self.shader, projection, view)
+    def draw(self):
+        super().draw(self.shader)
 
 class LineSegmentMesh(Mesh):
     def __init__(self, ray: Ray, color: glm.vec3 = Color.BLACK, alpha: float = 1.0):

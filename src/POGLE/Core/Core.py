@@ -11,6 +11,8 @@ from collections import deque
 
 from typing import Tuple
 import struct
+import math
+from typing import List, Union, Optional
 def clamp(n, min, max):
     if n < min:
         return min

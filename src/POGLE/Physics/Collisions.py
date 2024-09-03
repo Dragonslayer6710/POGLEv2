@@ -1,5 +1,6 @@
-from POGLE.Core.Core import *
+import glm
 
+from POGLE.Core.Core import *
 
 class Collider:
     pass
@@ -21,6 +22,31 @@ class AABB:
     min: glm.vec3
     max: glm.vec3
 
+class Frustum:
+    class Intersection:
+        INSIDE = 0
+        OUTSIDE = 1
+        INTERSECT = 2
+
+    @staticmethod
+    def get_frustum_planes(view_matrix: glm.mat4, proj_matrix: glm.mat4) -> List[glm.vec4]:
+        planes = []
+        m = glm.value_ptr(proj_matrix * view_matrix)
+
+        # Extract frustum planes from the matrix
+        planes.append(glm.vec4(m[3] + m[0], m[7] + m[4], m[11] + m[8], m[15] + m[12]))  # Left
+        planes.append(glm.vec4(m[3] - m[0], m[7] - m[4], m[11] - m[8], m[15] - m[12]))  # Right
+        planes.append(glm.vec4(m[3] - m[1], m[7] - m[5], m[11] - m[9], m[15] - m[13]))  # Top
+        planes.append(glm.vec4(m[3] + m[1], m[7] + m[5], m[11] + m[9], m[15] + m[13]))  # Bottom
+        planes.append(glm.vec4(m[3] + m[2], m[7] + m[6], m[11] + m[10], m[15] + m[14]))  # Near
+        planes.append(glm.vec4(m[3] - m[2], m[7] - m[6], m[11] - m[10], m[15] - m[14]))  # Far
+
+        return [glm.normalize(p) for p in planes]
+
+    def __init__(self, view_matrix: glm.mat4, proj_matrix: glm.mat4):
+        self.planes = Frustum.get_frustum_planes(view_matrix, proj_matrix)
+
+
 
 class Collider:
     hitRecall: dict[Collider, dict[Collider | glm.vec3, Hit]] = {}
@@ -32,11 +58,6 @@ class Collider:
     def recallHit(self, collider: Collider | glm.vec3) -> Hit | None:
         if self.hitRecall.get(collider):
             return self.hitRecall.pop(collider)
-
-    def recallSweep(self, collider: Collider | glm.vec3) -> Hit | None:
-        if self.sweepRecall.get(collider):
-            return self.sweepRecall.pop(collider)
-
 
 class Ray(Collider):
     __create_key = object()
@@ -67,7 +88,6 @@ class Ray(Collider):
     def __str__(self):
         return f"Ray(origin: {self.start}, dir: {self.dir}, normal: {self.normal}, end: {self.end})"
 
-
 class AABB(Collider):
     __create_key = object()
 
@@ -82,6 +102,17 @@ class AABB(Collider):
         self.pos: glm.vec3 = pos
         self.size: glm.vec3 = size
         self._bounds: list[glm.vec3] = [self.min, self.max]
+        self._corners = [
+            self.min,
+            glm.vec3(self.max.x, self.min.y, self.min.z),
+            glm.vec3(self.min.x, self.max.y, self.min.z),
+            glm.vec3(self.max.x, self.max.y, self.min.z),
+            glm.vec3(self.min.x, self.min.y, self.max.z),
+            glm.vec3(self.max.x, self.min.y, self.max.z),
+            glm.vec3(self.min.x, self.max.y, self.max.z),
+            self.max
+        ]
+
 
     @classmethod
     def from_min_max(cls, min: glm.vec3, max: glm.vec3):
@@ -108,6 +139,7 @@ class AABB(Collider):
     def does_overlap(self, overlap: glm.vec3) -> bool:
         return overlap.x > 0 and overlap.y > 0 and overlap.z > 0
 
+    # Example of the intersectPoint method with comments
     def intersectPoint(self, point: glm.vec3) -> Hit:
         # Calculate the vector difference between the centers of the AABB and the point
         delta = point - self.pos
@@ -347,6 +379,17 @@ class AABB(Collider):
         self.hitRecall[box] = hit
         return hit
 
+    def intersectFrustum(self, frustum: Frustum) -> bool:
+        for plane in frustum.planes:
+            # Calculate the distance from the center of the AABB to the plane
+            d = glm.dot(glm.vec3(plane.x, plane.y, plane.z), self.pos) + plane.w
+            # Compute the maximum distance from the AABB center to the plane normals
+            r = self.half.x * abs(plane.x) + self.half.y * abs(plane.y) + self.half.z * abs(plane.z)
+            if d < -r:
+                return False  # Outside the frustum
+
+        return True  # Inside or intersects the frustum
+
     def contains(self, box: AABB) -> bool:
         # Check if the entire 'box' is within the 'self' bounds
         return (self.min.x <= box.min.x and
@@ -359,9 +402,7 @@ class AABB(Collider):
     def __str__(self):
         return f"AABB(pos: {self.pos}, size: {self.size})"
 
-
 _collider = Collider
-
 
 class Physical:
     _collider: Collider | None
@@ -374,7 +415,6 @@ class Physical:
 
     def recallHit(self, collider: Collider | glm.vec3) -> Hit:
         return self._collider.recallHit(collider)
-
 
 class PhysicalBox(Physical):
     _collider: AABB | None
@@ -417,3 +457,28 @@ class PhysicalBox(Physical):
     @property
     def max(self) -> glm.vec3:
         return self.bounds.max
+
+
+def test_aabb_frustum_intersection():
+    # Define view and projection matrices for the frustum (identity matrices for simplicity)
+    view_matrix = glm.mat4(1.0)
+    proj_matrix = glm.mat4(1.0)
+
+    # Create a frustum
+    frustum = Frustum(view_matrix, proj_matrix)
+
+    # Define some AABBs
+    aabb1 = AABB.from_pos_size(glm.vec3(0.0, 0.0, 0.0), glm.vec3(1.0, 1.0, 1.0))
+    aabb2 = AABB.from_pos_size(glm.vec3(5.0, 5.0, 5.0), glm.vec3(1.0, 1.0, 1.0))
+    aabb3 = AABB.from_pos_size(glm.vec3(-2.0, -2.0, -2.0), glm.vec3(1.0, 1.0, 1.0))
+
+    # Check if the AABBs intersect with the frustum
+    print(f"AABB1 intersects with frustum: {aabb1.intersectFrustum(frustum)}")  # Expect True or False
+    print(f"AABB2 intersects with frustum: {aabb2.intersectFrustum(frustum)}")  # Expect True or False
+    print(f"AABB3 intersects with frustum: {aabb3.intersectFrustum(frustum)}")  # Expect True or False
+
+
+# Run the test
+test_aabb_frustum_intersection()
+
+#quit()

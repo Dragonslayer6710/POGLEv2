@@ -40,6 +40,7 @@ class Chunk(PhysicalBox):
         Cardinal.NorthWest: glm.vec2(1, -1),
     }
     solid_blocks: list[int | None] = [None for i in range(_CHUNK_WIDTH ** 2 * _CHUNK_HEIGHT)]
+    blocks_on_frustum: list[int | None] = [None for i in range(_CHUNK_WIDTH ** 2 * _CHUNK_HEIGHT)]
 
     # World chunk position in world vec2 from position in world
     # (worldPos.x/z = -inf to inf)
@@ -59,6 +60,7 @@ class Chunk(PhysicalBox):
         super().__init__()
         self._blocks: list[Block] = []
         self.solid_blocks: list[int | None] = copy.deepcopy(Chunk.solid_blocks)
+        self.blocks_on_frustum: list[int | None] = copy.deepcopy(Chunk.blocks_on_frustum)
 
         self.block_face_ids = copy.deepcopy(Chunk.block_face_ids)
         self.block_face_tex_dims = copy.deepcopy(Chunk.block_face_tex_dims)
@@ -91,8 +93,7 @@ class Chunk(PhysicalBox):
             for block in blocks:
                 block.link_chunk(self)
                 self._blocks.append(block)
-        for block in self._blocks:
-            self.update_block_in_chunk(block)
+        self.initUpdate = True
 
     def blocks(self, chunkBlockID) -> Block:
         return self._blocks[chunkBlockID]
@@ -110,7 +111,7 @@ class Chunk(PhysicalBox):
     def link_world(self, world):
         self.world = world
 
-    def update_block_in_chunk(self, block: Block):
+    def update_block_in_chunk(self, block: Block, camFrustum: Frustum | None = None):
         if block.is_solid:
             if None is self.solid_blocks[block.block_id_in_chunk]:
                 self.solid_blocks[block.block_id_in_chunk] = block.block_id_in_chunk
@@ -121,7 +122,14 @@ class Chunk(PhysicalBox):
                 self.num_solid_blocks -= 1
                 self.solid_blocks[block.block_id_in_chunk] = None
                 self.octree.remove(block)
-        if self.solid_blocks[block.block_id_in_chunk]:
+        if camFrustum:
+            if block.bounds.intersectFrustum(camFrustum):
+                self.blocks_on_frustum[block.block_id_in_chunk] = block.block_id_in_chunk
+            else:
+                self.blocks_on_frustum[block.block_id_in_chunk] = None
+        blockIsSolid = self.solid_blocks[block.block_id_in_chunk] is not None
+        blockOnFrustum = self.blocks_on_frustum[block.block_id_in_chunk] is not None
+        if blockIsSolid and blockOnFrustum:
             self.set_block_instance(block)
         else:
             self.set_block_instance(block, True)
@@ -223,13 +231,21 @@ class Chunk(PhysicalBox):
         chunkX, chunkZ = [int(i) for i in worldBlockPos.xz % _CHUNK_WIDTH]
         return self._get_block(chunkX, chunkY, chunkZ)
 
-    def update(self) -> bool:
+    def update(self, camFrustum: Frustum) -> bool:
         updated = False
-        for chunkBlockID in filter(None, self.solid_blocks):
+        if self.initUpdate:
+            self.initUpdate = False
+            for block in self._blocks:
+                self.update_block_in_chunk(block, camFrustum)
+            return True
+        solid_blocks = filter(None, self.solid_blocks)
+        for chunkBlockID in solid_blocks:
             block: Block = self.blocks(chunkBlockID)
-            if block.update_side_visibility():
-                self.set_block_instance(block)
-                updated = True
+            blockOnFrustum = self.blocks_on_frustum[chunkBlockID] is not None
+            if blockOnFrustum:
+                if block.update_side_visibility():
+                    self.set_block_instance(block)
+                    updated = True
         return updated
 
     def set_block_instance(self, block: Block, clear=False):

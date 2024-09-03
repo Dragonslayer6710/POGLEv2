@@ -42,13 +42,15 @@ class WorldRenderer:
     def _build_mesh(self):
         pass
 
-
+_CHUNKS_IN_WORLD_RANGE = range(_CHUNKS_IN_WORLD)
 class World(PhysicalBox):
-    block_face_ids: list[np.array] = [None] * _CHUNKS_IN_WORLD
-    block_face_tex_dims: list[np.array] = [None] * _CHUNKS_IN_WORLD
-    block_positions: list[np.array] = [None] * _CHUNKS_IN_WORLD
+    block_face_ids: list[np.array] = [None for i in _CHUNKS_IN_WORLD_RANGE]
+    block_face_tex_dims: list[np.array] = [None for i in _CHUNKS_IN_WORLD_RANGE]
+    block_positions: list[np.array] = [None for i in _CHUNKS_IN_WORLD_RANGE]
 
-    not_empty_chunks: list[int | None] = [None] * _CHUNKS_IN_WORLD
+    _all_chunk_ids: list[int] = [i for i in _CHUNKS_IN_WORLD_RANGE]
+    not_empty_chunks: list[int | None] = [None for i in _CHUNKS_IN_WORLD_RANGE]
+    chunks_intersect_frustum: list[int | None] = [None for i in _CHUNKS_IN_WORLD_RANGE]
 
     # World chunk array index from chunk array offset (chunk.x/z = 0 to _CHUNKS_IN_ROW)
     @staticmethod
@@ -104,6 +106,7 @@ class World(PhysicalBox):
         self.block_positions = copy.deepcopy(World.block_positions)
 
         self.not_empty_chunks = copy.deepcopy(World.not_empty_chunks)
+        self.chunks_intersect_frustum = copy.deepcopy(World.chunks_intersect_frustum)
 
         self.worldWidth = len(_WORLD_CHUNK_RANGE)
 
@@ -115,9 +118,7 @@ class World(PhysicalBox):
         else:
             self._initialize_with_chunks(chunks)
 
-        for chunk in self._chunks:
-            self.update_chunk_in_world(chunk)
-        self.update()
+        self.initUpdate: bool = True
 
     def _initialize_default_chunks(self):
         for x in range(self.worldWidth):
@@ -134,7 +135,7 @@ class World(PhysicalBox):
     def link_renderer(self, renderer: WorldRenderer):
         self.renderer = renderer
 
-    def update_chunk_in_world(self, chunk: Chunk):
+    def update_chunk_in_world(self, chunk: Chunk, camFrustum: Frustum | None = None):
         if chunk.not_empty:
             if None is self.not_empty_chunks[chunk.chunk_id]:
                 self.not_empty_chunks[chunk.chunk_id] = chunk.chunk_id
@@ -143,7 +144,14 @@ class World(PhysicalBox):
             if self.not_empty_chunks[chunk.chunk_id] == chunk.chunk_id:
                 self.not_empty_chunks[chunk.chunk_id] = None
                 self.quadtree.remove(chunk)
-        if self.not_empty_chunks[chunk.chunk_id] is not None:
+        if camFrustum:
+            if chunk.bounds.intersectFrustum(camFrustum):
+                self.chunks_intersect_frustum[chunk.chunk_id] = chunk.chunk_id
+            else:
+                self.chunks_intersect_frustum[chunk.chunk_id] = None
+        chunkNotEmpty = self.not_empty_chunks[chunk.chunk_id] is not None
+        chunkIntersectsFrustum = self.chunks_intersect_frustum[chunk.chunk_id] is not None
+        if chunkNotEmpty and chunkIntersectsFrustum:
             self.set_chunk_instance(chunk)
         else:
             self.set_chunk_instance(chunk, True)
@@ -172,12 +180,20 @@ class World(PhysicalBox):
     def chunks(self, worldChunkID: int) -> Chunk:
         return self._chunks[worldChunkID]
 
-    def update(self) -> bool:
+    def update(self, camFrustum: Frustum) -> bool:
         updated = False
-        for worldChunkID in list(filter((None).__ne__, self.not_empty_chunks)):
+        if self.initUpdate:
+            self.initUpdate = False
+            for chunk in self._chunks:
+                chunk.update(camFrustum)
+                self.update_chunk_in_world(chunk, camFrustum)
+            return True
+        not_empty_chunks = list(filter((None).__ne__, self.not_empty_chunks))
+        for worldChunkID in not_empty_chunks:
             chunk: Chunk = self.chunks(worldChunkID)
-            chunk.update()
-            self.set_chunk_instance(chunk)
+            chunk.update(camFrustum)
+            self.update_chunk_in_world(chunk, camFrustum)
+
             updated = True
         return updated
 
@@ -263,7 +279,7 @@ class World(PhysicalBox):
 
         # Deserialize the chunk instances
         chunk_instances = []
-        for _ in range(_CHUNKS_IN_WORLD):
+        for _ in _CHUNKS_IN_WORLD_RANGE:
             instance_size = Block.positionInstanceLayout.nbytes * _BLOCKS_IN_CHUNK
             if offset + instance_size > len(binary_data):
                 chunk_instances.append(None)
@@ -416,9 +432,9 @@ class WorldRenderer:
     def _build_mesh(self):
         self.worldMesh = BlockMesh(*self.get_instance_data())
 
-    def draw(self, projection: glm.mat4, view: glm.mat4):
+    def draw(self):
         #return
-        self.worldMesh.draw(self.worldBlockShader, projection, view)
+        self.worldMesh.draw(self.worldBlockShader)
         # CubeMesh(NMM(self.world.pos,s=self.world.size), alpha=0.5).draw(projection, view)
         # for chunk in self.world._chunks:
         #     CubeMesh(NMM(chunk.pos, s=chunk.size), color=Color.BLUE, alpha=0.5).draw(projection, view)
