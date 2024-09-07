@@ -39,7 +39,7 @@ class Player(PhysicalBox):
 
         self.bounds = AABB.from_pos_size(feetPos + _PLAYER_OFFSET_FEET_TO_CENTRE, _PLAYER_DIMENSIONS)
         camPos: glm.vec3 = self.pos + _PLAYER_CAMERA_INITIAL_OFFSET
-        self.camera: Camera = Camera(camPos.x, camPos.y, camPos.z)
+        self.camera: Camera = Camera(camPos.x, camPos.y, camPos.z, aspectRatio=GetApplication().get_window().get_aspect_ratio())
 
         # movement vector/values
         self.acceleration: glm.vec3 = glm.vec3()
@@ -341,10 +341,10 @@ class Player(PhysicalBox):
                 if not space.is_solid:
                     self.targetFaceBlockSpace = space
 
-    def draw(self, projection: glm.mat4, view: glm.mat4):
+    def draw(self):
         if not self.firstPersonCamera:
-            self.playerMesh.draw(projection, view)
+            self.playerMesh.draw()
         if self.targetBlock:
             tbwfCubeMesh = self.targetBlockWireframeCubeMesh
             if tbwfCubeMesh:
-                tbwfCubeMesh.draw(projection, view)
+                tbwfCubeMesh.draw()

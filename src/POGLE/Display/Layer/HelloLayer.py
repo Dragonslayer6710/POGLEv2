@@ -115,7 +115,7 @@ class HelloLayer(Layer):
 
         if self.cursor_timer > 0: self.cursor_timer -= 1
         if self.tab_timer > 0: self.tab_timer-=1
-        game.update(deltaTime)
+
         for boundCtrl in GetBoundControls():
             ctrlID = boundCtrl.GetID()
             if boundCtrl.GetInputState().value:
@@ -142,9 +142,10 @@ class HelloLayer(Layer):
                 inpStat.s_MousePosY = inpStat.s_NextMousePosY
         # self.blockShader.setMat4("uProjection", projection)
         # self.blockShader.setMat4("uView", game.playerCam.GetViewMatrix())
-        projection = self._Renderer.get_projection()
+        projection = game.playerCam.get_projection()
         view = game.playerCam.GetViewMatrix()
-        game.draw(projection, view)
+        game.update(deltaTime, projection, view)
+        game.draw()
 
     def toggle_cam_control(self) -> bool:
         window = GetApplication().get_window()

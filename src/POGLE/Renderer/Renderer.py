@@ -3,11 +3,8 @@ import glm
 from POGLE.Renderer.Camera import *
 from POGLE.Renderer.Mesh import *
 
-_DefNearPlane = 0.1
-_DefFarPlane = 100.0
-
 class Renderer:
-    def __init__(self, width: int, height: int, fovDeg: GLfloat = FOV, nearPlane: GLfloat = _DefNearPlane, farPlane: GLfloat = _DefFarPlane):
+    def __init__(self, width: int, height: int, fovDeg: GLfloat = FOV, nearPlane: GLfloat = NEAR, farPlane: GLfloat = FAR):
         self._EnabledBuffers = GL_COLOR_BUFFER_BIT
         self._Left: int = 0
         self._Bottom: int = 0
@@ -48,9 +45,6 @@ class Renderer:
             self._NearPlane: GLfloat = nearPlane
         if farPlane:
             self._FarPlane: GLfloat = farPlane
-
-    def get_projection(self):
-        return glm.perspective(self._FOV, self._AspectRatio, self._NearPlane, self._FarPlane)
 
     def _Init(self, width: GLsizei, height: GLsizei, fovDeg: GLfloat, nearPlane: GLfloat, farPlane: GLfloat):
         self.on_window_resize(width, height)

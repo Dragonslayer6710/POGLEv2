@@ -26,6 +26,17 @@ class Buffer:
         self.stored_size = size
         glBufferData(self.target, size, data, self.usage)
 
+    def buffer_sub_data(self, offset: GLsizeiptr, size: GLsizeiptr, data: np.ndarray):
+        if not self.data_len:
+            raise Exception("Trying to Buffer Sub Data on an empty buffer")
+        if offset >= self.stored_size:
+            raise Exception(f"Trying to Buffer Sub Data to offset {offset} when the buffer is of size {self.stored_size}")
+        if offset + size > self.stored_size:
+            raise Exception(
+                f"Buffer Overflow: tried to buffer sub data at offset {offset} which spans to {offset + size} but buffer is of size {self.stored_size}"
+            )
+        glBufferSubData(self.target, offset, size, data)
+
     def get_data(self):
         feedback = []
         # Feedback is for debugging, may be removed or disabled in production

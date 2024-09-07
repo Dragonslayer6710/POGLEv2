@@ -1,24 +1,32 @@
+from POGLE.Physics.Collisions import Frustum
 from POGLE.Core.Core import *
 from POGLE.Input.Control import *
+
 # Simple abstraction for cam movements
 
 # Default camera values
-YAW         = -90.0
-PITCH       =  0.0
-SPEED       =  2.5
-SENSITIVITY =  0.1
-FOV        =  45.0
+YAW = -90.0
+PITCH = 0.0
+SPEED = 2.5
+SENSITIVITY = 0.1
+FOV = 45.0
+NEAR = 0.1
+FAR = 100.0
 
 CAMERA_INITIAL_FRONT = glm.vec3(0.0, 0.0, -1.0)
 
-from POGLE.Physics.Collisions import Ray
 
 class Camera:
-    def __init__(self, posX = 0.0, posY = 0.0, posZ = 0.0, upX = 0.0, upY = 1.0, upZ = 0.0, yaw = YAW, pitch = PITCH):
+    def __init__(self, posX=0.0, posY=0.0, posZ=0.0, upX=0.0, upY=1.0, upZ=0.0, yaw=YAW, pitch=PITCH, zNear=NEAR,
+                 zFar=FAR, aspectRatio=1.0):
         self.Position = glm.vec3(posX, posY, posZ)
         self.WorldUp = glm.vec3(upX, upY, upZ)
         self.Yaw = yaw
         self.Pitch = pitch
+
+        self.zNear = zNear
+        self.zFar = zFar
+        self.AspectRatio = aspectRatio
 
         self.Front = CAMERA_INITIAL_FRONT
         self.Up = glm.vec3()
@@ -29,8 +37,25 @@ class Camera:
         self.UpdateCameraVectors()
         self.process_mouse = False
 
+    def setAspect(self, aspectRatio):
+        self.AspectRatio = aspectRatio
+
+    def setClipPlanes(self, zNear, zFar):
+        self.zNear = zNear
+        self.zFar = zFar
+
+    def get_frustum(self, view_matrix: glm.mat4 = None, proj_matrix: glm.mat4 = None):
+        if view_matrix is None:
+            view_matrix = self.GetViewMatrix()
+        if proj_matrix is None:
+            proj_matrix = self.get_projection()
+        return Frustum(view_matrix, proj_matrix)
+
     def GetViewMatrix(self) -> glm.mat4:
         return glm.lookAt(self.Position, self.Position + self.Front, self.Up)
+
+    def get_projection(self):
+        return glm.perspective(self.FOV, self.AspectRatio, self.zNear, self.zFar)
 
     def ProcessMouseMovement(self, xoffset: float, yoffset: float, constrainPitch: bool = True) -> None:
         xoffset *= self.MouseSensitivity
@@ -65,8 +90,9 @@ class Camera:
         )
         self.Front = glm.normalize(front)
         # also re-calculate the Right and Up vector
-        self.Right = glm.normalize(glm.cross(self.Front, self.WorldUp)) # normalize the vectors, because their length gets closer to 0 the more you look up which results in slower movement.
-        self.Up    = glm.normalize((glm.cross(self.Right, self.Front)))
+        self.Right = glm.normalize(glm.cross(self.Front,
+                                             self.WorldUp))  # normalize the vectors, because their length gets closer to 0 the more you look up which results in slower movement.
+        self.Up = glm.normalize((glm.cross(self.Right, self.Front)))
 
     def look_enabled(self, enabled: bool):
         self.process_mouse = enabled
