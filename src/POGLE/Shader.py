@@ -45,27 +45,20 @@ class FragmentShader(Shader):
         super().__init__(shaderName, GL_FRAGMENT_SHADER)
 
 
-class UniformBlockLayout(DataLayout):
-    from POGLE.Geometry.Data import _DataAttribute as DataAttribute
-    def __init__(self, block_name: str, uniformBlockAttribs: list[DataAttribute]):
-        super().__init__(uniformBlockAttribs)
-        self.name: str = block_name
-
-
-defaultUniformBlockLayout = UniformBlockLayout("Matrices", [
-    FloatDA.Mat4(),  # Projection Matrix
-    FloatDA.Mat4()  # View Matrix
+defaultUniformBlockLayout = DUBL("Matrices", [
+    UBA.Float().Mat4(attrName="uProjection"),  # Projection Matrix
+    UBA.Float().Mat4(attrName="uView")  # View Matrix
 ])
 
 
 
-class UniformBlock(DataPoint):
+class UniformBlock:
     __create_key = object()
-    layout: UniformBlockLayout
+    layout: DUBL
     _UBCache: dict = {}
     _next_block_binding: int = 0
 
-    def __init__(self, create_key, uniformBlockElements, layout: UniformBlockLayout = defaultUniformBlockLayout):
+    def __init__(self, create_key, uniformBlockElements, layout: DUBL = defaultUniformBlockLayout):
         super().__init__(uniformBlockElements, layout)
         assert (create_key == UniformBlock.__create_key), \
             "UniformBlock objects must be created using UniformBlock.create"
@@ -74,7 +67,7 @@ class UniformBlock(DataPoint):
         UniformBlock._UBCache[self.name]: UniformBlock = self
 
     @classmethod
-    def create(cls, uniformBlockElements, layout: UniformBlockLayout = defaultUniformBlockLayout):
+    def create(cls, uniformBlockElements, layout: DUBL = defaultUniformBlockLayout):
         block: UniformBlock | None = UniformBlock.get_uniform_block(layout.name)
         if block:
             return block

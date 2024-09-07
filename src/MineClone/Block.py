@@ -5,7 +5,6 @@ import numpy as np
 
 from POGLE.Core.Application import *
 from POGLE.Physics.SpatialTree import *
-from POGLE.Renderer.Mesh import WireframeCubeMesh
 
 _QUADS_IN_BLOCK = 6
 class Block(PhysicalBox):
@@ -42,18 +41,16 @@ class Block(PhysicalBox):
         ID.Dirt: [TexSide.Dirt] * 6
     }
 
-    vertices: Vertices = None
-    indices: np.array = Quad.indices
     class Face:
-        texDimInstanceLayout: VertexLayout = VertexLayout([
-            FloatDA.Vec2(1),
-            FloatDA.Vec2(1)
+        texDimInstanceLayout: Data._Layout = DVL([
+            VA.Float().Vec2(1),
+            VA.Float().Vec2(1)
         ])
-        idInstanceLayout: VertexLayout = VertexLayout([
-            IntDA.Single(1)
+        idInstanceLayout: Data._Layout = DVL([
+            VA.Int().Single(1)
         ])
-    positionInstanceLayout: VertexLayout = VertexLayout([
-        FloatDA.Vec3(1)
+    positionInstanceLayout: Data._Layout = DVL([
+        VA.Float().Vec3(1)
     ])
 
     adjBlockOffsets: dict[Side, glm.vec3] = {
@@ -206,22 +203,6 @@ class Block(PhysicalBox):
             return [face_ids, face_tex_dims, np.concatenate([np.array(self.pos, dtype=np.float32) for id in face_ids])]
         return [None, None, None]
 
-    def get_wireframe_cube_mesh(self) -> WireframeCubeMesh | None:
-        if self.is_solid:
-            wfqCube = WireframeQuadCube(self.pos, Color.BLACK)
-            wire_frame_faces = split_array(wfqCube.instances.data, 6)
-            instance_data = np.array([])
-            cnt = 0
-            for side in Block.Side:
-                if self.visibleSide[side]:
-                    cnt+=1
-                    instance_data = np.concatenate((instance_data, wire_frame_faces[side.value]), dtype=wire_frame_faces[side.value].dtype)
-            if cnt == 0:
-                return None
-            return WireframeCubeMesh(wfqCube,
-                              Instances(instance_data, wfqCube.instances.layout, True))
-        return None
-
     def __str__(self):
         return f"Block(id: {self.id}, pos: {self.pos})"
 
@@ -291,7 +272,7 @@ class Block(PhysicalBox):
 
 class BlockMesh(Mesh):
     def __init__(self, block_face_ids: np.array, block_face_tex_dims: np.array, block_positions: np.array):
-        super().__init__(Shapes.TexQuad, textures=Block._TextureAtlas,
+        super().__init__(TexQuad(), textures=Block._TextureAtlas,
                          instances=Instances(block_face_tex_dims, Block.Face.texDimInstanceLayout, True))
         self.bind()
 

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from POGLE.OGL.OpenGLContext import *
 import os, sys, random, copy
+from typing import Union, List, Optional, Tuple, TypeVar, Generic, Type
+
+import ctypes
+from ctypes import sizeof as c_sizeof
 
 import glm
 import numpy as np
@@ -11,6 +15,8 @@ from collections import deque
 
 from typing import Tuple
 import struct
+
+
 def clamp(n, min, max):
     if n < min:
         return min

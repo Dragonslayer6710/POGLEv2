@@ -77,7 +77,7 @@ class Window:
         for i in range(len(monitors)):
             monX, monY = glfwGetMonitorPos(monitors[i])
             mode = glfwGetVideoMode(monitors[i])
-            monW, monH = mode.size
+            monW, monH = mode.numElements
 
             if winX >= monX and winX < (monX + monW) and winY >= monY and winY < monY + (monY + monH):
                 return monitors[i]

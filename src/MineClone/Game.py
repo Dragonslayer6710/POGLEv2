@@ -41,7 +41,7 @@ class Game:
             UniformBlockLayout(
                 "BlockSides",
                 [
-                    FloatDA.Mat4() for i in range(6)
+                    VA.Float().Mat4() for i in range(6)
                 ]
             )
         )

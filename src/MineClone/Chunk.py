@@ -121,7 +121,7 @@ class Chunk(PhysicalBox):
                 self.num_solid_blocks -= 1
                 self.solid_blocks[block.block_id_in_chunk] = None
                 self.octree.remove(block)
-        if self.solid_blocks[block.block_id_in_chunk]:
+        if self.solid_blocks[block.block_id_in_chunk] is not None:
             self.set_block_instance(block)
         else:
             self.set_block_instance(block, True)

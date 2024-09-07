@@ -351,15 +351,9 @@ class WorldRenderer:
         self._xRenderRange = range(start_x, end_x)
         self._zRenderRange = range(start_z, end_z)
 
-        print(f"Calculated bounds: start_x: {start_x}, end_x: {end_x}, start_z: {start_z}, end_z: {end_z}")
-        print(f"Clamped _xRenderRange: {list(self._xRenderRange)}")
-        print(f"Clamped _zRenderRange: {list(self._zRenderRange)}")
-
         self._set_rendered_chunk_ids()
 
     def _set_rendered_chunk_ids(self):
-        print(f"Using _xRenderRange: {list(self._xRenderRange)}")
-        print(f"Using _zRenderRange: {list(self._zRenderRange)}")
 
         # Preallocate the list for better performance
         num_chunks = len(self._xRenderRange) * len(self._zRenderRange)
@@ -367,18 +361,8 @@ class WorldRenderer:
 
         # Populate the list with chunk IDs
         index = 0
-        for x in self._xRenderRange:
-            for z in self._zRenderRange:
-                if 0 <= x < _CHUNKS_IN_ROW and 0 <= z < _CHUNKS_IN_ROW:
-                    chunk_id = self._chunk_ids_in_world[x][z]
-                    print(f"Chunk ID at ({x}, {z}): {chunk_id}")
-                    self.rendered_chunk_ids[index] = chunk_id
-                else:
-                    print(f"Out of bounds: ({x}, {z})")
-                index += 1
 
-        print(f"Final rendered_chunk_ids: {self.rendered_chunk_ids}")
-
+        self.rendered_chunk_ids = [self._chunk_ids_in_world[x][z] if 0 <= x < _CHUNKS_IN_ROW and 0 <= z < _CHUNKS_IN_ROW else None for z in self._zRenderRange for x in self._xRenderRange]
         self._build_mesh()
 
     def update_origin(self, originPos: glm.vec3):

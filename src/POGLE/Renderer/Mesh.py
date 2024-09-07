@@ -6,16 +6,13 @@ from POGLE.Geometry.Shape3D import *
 
 
 class Mesh:
-    def __init__(self, vertices: Shape | Vertices = None, indices: list[int] = None, textures: list[Texture] = None,
-                 instances: Instances = None, primitive=GL_TRIANGLES):
-        if None == indices:
-            indices = vertices.indices
-            vertices: Vertices = vertices.vertices
+    def __init__(self, vertices: DataSet, indices: list[int], textures: list[Texture] = None,
+                 instances: Optional[Union[DataSet, List[DataSet]]] = None, primitive=GL_TRIANGLES):
         self.vertices = vertices
         self.indices = indices
         self.count = len(indices)
         self.texture: Texture = textures
-        self.instances: Instances = instances
+        self.instances: DataSet = instances
 
         self.primitive = primitive
 
@@ -47,27 +44,27 @@ class Mesh:
         self.unbind()
 
 
-class QuadCubeMesh(Mesh):
-
-    def __init__(self, qc: QuadCube):
-        # Initialize Mesh with instances
-        super().__init__(qc, instances=qc.instances)
-
-
-class WireframeCubeMesh(Mesh):
-    def __init__(self, wfqCube: WireframeQuadCube, instances: Instances, thickness: float = 2.0):
-        self.thickness = thickness
-        self.shader = ShaderProgram("wireframe_block")
-        self.shader.bind_uniform_block("Matrices")
-        self.shader.bind_uniform_block("BlockSides")
-        super().__init__(wfqCube.vertices, wfqCube.indices, instances=instances, primitive=GL_LINES)
-
-    def draw(self, projection: glm.mat4, view: glm.mat4):
-        glLineWidth(self.thickness)
-        glDisable(GL_DEPTH_TEST)
-        super().draw(self.shader, projection, view)
-        glEnable(GL_DEPTH_TEST)
-        glLineWidth(1.0)
+# class QuadCubeMesh(Mesh):
+#
+#     def __init__(self, qc: QuadCube):
+#         # Initialize Mesh with instances
+#         super().__init__(qc, instances=qc.instances)
+#
+#
+# class WireframeCubeMesh(Mesh):
+#     def __init__(self, wfqCube: WireframeQuadCube, instances: DataSet, thickness: float = 2.0):
+#         self.thickness = thickness
+#         self.shader = ShaderProgram("wireframe_block")
+#         self.shader.bind_uniform_block("Matrices")
+#         self.shader.bind_uniform_block("BlockSides")
+#         super().__init__(wfqCube.vertices, wfqCube.indices, instances=instances, primitive=GL_LINES)
+#
+#     def draw(self, projection: glm.mat4, view: glm.mat4):
+#         glLineWidth(self.thickness)
+#         glDisable(GL_DEPTH_TEST)
+#         super().draw(self.shader, projection, view)
+#         glEnable(GL_DEPTH_TEST)
+#         glLineWidth(1.0)
 
 class CrosshairMesh(Mesh):
 
@@ -95,7 +92,7 @@ class LineSegmentMesh(Mesh):
     def __init__(self, ray: Ray, color: glm.vec3 = Color.BLACK, alpha: float = 1.0):
         self.shader = ShaderProgram("ray")
         self.shader.bind_uniform_block("Matrices")
-        lineSegment = LineSegment(ray, color, alpha)
+        lineSegment = Line(ray, color, alpha)
         super().__init__(lineSegment, instances=lineSegment.instances, primitive=GL_LINES)
 
     def draw(self, projection: glm.mat4, view: glm.mat4):

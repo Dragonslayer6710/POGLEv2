@@ -1,10 +1,14 @@
 // block.vert
 #version 450 core
+// Per Vertex Data
 layout (location = 0) in vec2 aLocalPosXY;
 layout (location = 1) in vec2 aTexUV;
+// Per instance data
+// - Changes every instance (side of cube)
 layout (location = 2) in vec2 aTexPos;
 layout (location = 3) in vec2 aTexSize;
 layout (location = 4) in int aSideID;
+// - Changes every 6 instances (every cube)
 layout (location = 5) in vec3 aWorldPos;
 
 out vec2 vTexUV;

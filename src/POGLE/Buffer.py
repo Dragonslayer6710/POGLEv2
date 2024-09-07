@@ -1,10 +1,17 @@
+import numpy as np
+
 from POGLE.Geometry.Data import *
+_typeDict = Data._typeDict
+
+_defaultVBOLayout = DVL(VA.Float().Single())
+_EBOLayout = DVL(VA.UShort().Single())
+
 class Buffer:
-    def __init__(self, buffers = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW, dtype = GLfloat):
-        self.target: GLenum = buffers
+    def __init__(self, layout: Data._Layout, target = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW):
+        self.target: GLenum = target
         self.ID: GLuint = glGenBuffers(1)
+        self.layout = layout
         self.usage = usage
-        self.dtype = dtype
         self.stored_size: int = 0
         self.data_len: int = 0
 
@@ -14,15 +21,22 @@ class Buffer:
     def unbind(self):
         glBindBuffer(self.target, 0)
 
-    def buffer_data(self, size: GLsizeiptr, data: np.ndarray):
+    def buffer_data(self, size: GLsizeiptr, data: bytes):
         self.data_len = len(data)
         self.stored_size = size
         glBufferData(self.target, size, data, self.usage)
 
     def get_data(self):
+        feedback = []
         # Feedback is for debugging, may be removed or disabled in production
-        feedback = (self.dtype * self.data_len)()
-        glGetBufferSubData(self.target, 0, self.stored_size, feedback)
+        offset = 0
+        for attribute in self.layout.attributes:
+            bytes = attribute.numBytes
+            proportion = bytes // self.layout.stride
+            sub_feedback = (_typeDict[attribute.ctype_base] * self.data_len * proportion)()
+            glGetBufferSubData(self.target, offset, bytes, sub_feedback)
+            feedback += sub_feedback
+            offset += bytes
         return feedback
 
     def print_data(self):
@@ -41,39 +55,48 @@ class Buffer:
 
 
 class VertexBuffer(Buffer):
-    def __init__(self, dtype=GLfloat):
-        super().__init__(dtype=dtype)
+    def __init__(self, layout: Data._Layout = _defaultVBOLayout):
+        super().__init__(layout)
 
-    def buffer_data(self, vertices: Vertices, instances: Instances = None):
-        if not instances:
-            super().buffer_data(vertices.bytes, vertices.data)
-        else:
-            super().buffer_data(vertices.bytes + instances.bytes, np.concatenate([vertices.data, instances.data], axis=0))
+    def buffer_data(self, vertices: Vector):
+        super().buffer_data(vertices.bytes, vertices.data)
 
 class ElementBuffer(Buffer):
     def __init__(self):
-        super().__init__(GL_ELEMENT_ARRAY_BUFFER, dtype=GLushort)
+        super().__init__(_EBOLayout, GL_ELEMENT_ARRAY_BUFFER)
 
 class VertexArray:
-    def __init__(self, vertices: Vertices, indices: list[int], instances: Instances = None):
+    def __init__(self, vertices: Vector, indices: list[int], instances: Optional[Union[List[Vector], Vector]] = None):
         self.EBO = None
 
-        indices = np.array(indices, np.uint16)
+        indices = np.array(indices, np.ushort)
 
         self.ID = glGenVertexArrays(1)
         self.bind()
 
+        self.IBOs: Optional[List[VertexBuffer]] = None
+        if isinstance(instances, List):
+            self.IBOs = []
+            for i, instDataSet in enumerate(instances):
+                instDataSet.set_attribute_array_pointers()
+                self.IBOs.append(VertexBuffer())
+                self.IBOs[i].bind()
+                self.IBOs[i].buffer_data(instDataSet)
+                self.IBOs[i].unbind()
+
         self.VBO = VertexBuffer()
         self.VBO.bind()
-        self.VBO.buffer_data(vertices, instances)
-        vertices.set_vertex_attrib_pointers()
-        if instances:
-            instances.set_vertex_attrib_pointers(vertices.nextID(), vertices.bytes)
+        vertices.set_attribute_array_pointers()
+        if not instances or isinstance(instances, List):
+            self.VBO.buffer_data(vertices)
+        else:
+            self.VBO.buffer_data(vertices, instances)
+            instances.set_attribute_array_pointers(vertices.bytes)
         self.VBO.unbind()
 
         self.EBO = ElementBuffer()
         self.EBO.bind()
-        self.EBO.buffer_data(indices.nbytes, indices)
+        self.EBO.buffer_data(indices.nbytes, indices.tobytes())
 
         self.unbind()
 

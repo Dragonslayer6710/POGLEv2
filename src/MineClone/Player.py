@@ -75,14 +75,6 @@ class Player(PhysicalBox):
         return CubeMesh(self.playerModelMatrix, alpha=0.5)
 
     @property
-    def collidingBlockWireCubesMesh(self) -> WireframeCubeMesh:
-        return WireframeCubeMesh(self.collidingBlockPositions)
-
-    @property
-    def targetBlockWireframeCubeMesh(self) -> WireframeCubeMesh:
-        return self.targetBlock.get_wireframe_cube_mesh()
-
-    @property
     def feetPos(self) -> glm.vec3:
         return self.pos - _PLAYER_OFFSET_FEET_TO_CENTRE
 

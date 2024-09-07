@@ -58,9 +58,9 @@ class HelloLayer(Layer):
                 Color.CYAN,
                 Color.WHITE
             ]
-            testQCs = ColQuadCube(
+            testQCs = ColQC(
                 [
-                    ColQuadCube.Instance(
+                    ColQC.Instance(
                         NMM(
                             glm.vec3(
                                 random.randrange(-50, 50),
@@ -73,7 +73,7 @@ class HelloLayer(Layer):
                     ) for i in range(0, random.randrange(0, 1000)+1)
                 ]
             )
-            testQC = ColQuadCube(
+            testQC = ColQC(
                 NMM(glm.vec3(0.0, 0.0, -5.0)),
                 [
                     Color.RED,

@@ -1,3 +1,36 @@
+# from POGLE.Buffer import *
+# from glfw.GLFW import *
+# GLFWwindowCount = 0
+# if not GLFWwindowCount:
+#     if not glfwInit():
+#         raise Exception("Could not initialize GLFW!")
+#
+# window =  glfwCreateWindow(640, 640, "", None, None)
+# GLFWwindowCount += 1
+#
+# glfwMakeContextCurrent(window)
+#
+# #glfwSetWindowUserPointer(self._Window, self._Data)
+# #self.set_vsync(True)
+# layout = DL([
+#     aLocalPosXY
+# ])
+# instanceLayout = DL([
+#     aModel
+# ], layout.nextID)
+# VertexArray(
+#     DataSet(
+#         layout,
+#         [DataPoint(layout, np.array(glm.vec2()))]
+#     ),
+#     [0],
+#     DataSet(
+#         instanceLayout,
+#         [DataPoint(instanceLayout, np.array(glm.mat4()))]
+#     )
+# )
+# quit()
+
 from POGLE.Display.Layer.HelloLayer import *
 
 class POGLEApp(Application):

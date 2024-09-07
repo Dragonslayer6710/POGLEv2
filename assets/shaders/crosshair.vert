@@ -2,7 +2,7 @@
 #version 450 core
 layout (location = 0) in vec2 aPos;
 layout (location = 1) in vec2 aScale;
-layout (location = 2) in vec3 aColor;
+layout (location = 2) in vec3 aColorRGB;
 layout (location = 3) in float aAlpha;
 out vec4 vColor;
 
