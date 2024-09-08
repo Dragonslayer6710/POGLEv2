@@ -7,6 +7,7 @@ _defaultVBOLayout = DVL(VA.Float().Single())
 _EBOLayout = DVL(VA.UShort().Single())
 
 class Buffer:
+    _bound_buffers: dict = {}
     def __init__(self, layout: Data._Layout, target = GL_ARRAY_BUFFER, usage = GL_STATIC_DRAW):
         self.target: GLenum = target
         self.ID: GLuint = glGenBuffers(1)
@@ -15,18 +16,37 @@ class Buffer:
         self.stored_size: int = 0
         self.data_len: int = 0
 
+    @staticmethod
+    def getBoundBuffer(target):
+        return Buffer._bound_buffers.get(target) or 0
+
+    @staticmethod
+    def isBufferBound(target, bufferID):
+        return Buffer.getBoundBuffer(target) == bufferID
+
+    @staticmethod
+    def recBoundBuffer(target, bufferID):
+        Buffer._bound_buffers[target] = bufferID
+
     def bind(self):
-        glBindBuffer(self.target, self.ID)
+        if not Buffer.isBufferBound(self.target, self.ID):
+            glBindBuffer(self.target, self.ID)
+            Buffer.recBoundBuffer(self.target, self.ID)
 
     def unbind(self):
-        glBindBuffer(self.target, 0)
+        if self.isBufferBound(self.target, self.ID):
+            glBindBuffer(self.target, 0)
+            Buffer.recBoundBuffer(self.target, self.ID)
+
 
     def buffer_data(self, size: GLsizeiptr, data: bytes):
+        self.bind()
         self.data_len = len(data)
         self.stored_size = size
         glBufferData(self.target, size, data, self.usage)
 
     def buffer_sub_data(self, offset: GLsizeiptr, size: GLsizeiptr, data: np.ndarray):
+        self.bind()
         if not self.data_len:
             raise Exception("Trying to Buffer Sub Data on an empty buffer")
         if offset >= self.stored_size:
@@ -38,6 +58,7 @@ class Buffer:
         glBufferSubData(self.target, offset, size, data)
 
     def get_data(self):
+        self.bind()
         feedback = []
         # Feedback is for debugging, may be removed or disabled in production
         offset = 0
