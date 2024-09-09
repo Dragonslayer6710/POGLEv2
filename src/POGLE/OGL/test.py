@@ -82,7 +82,7 @@ def create_and_compile_shaders() -> int:
 
 # Buffer and Attribute Setup
 def get_data_from_buffer(buffer, buffer_view, accessor):
-    buffer_data = buffer.data[buffer_view.byte_offset:buffer_view.byte_offset + buffer_view.byte_length]
+    buffer_data = buffer.params[buffer_view.byte_offset:buffer_view.byte_offset + buffer_view.byte_length]
     data = np.frombuffer(buffer_data, dtype=np.float32).reshape(accessor.count, accessor.type_size)
     return data
 
