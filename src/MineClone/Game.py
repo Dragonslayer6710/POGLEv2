@@ -7,8 +7,7 @@ from MineClone.Player import *
 
 class Game:
     def __init__(self):
-        Block._TextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
-
+        initFaceTextureAtlas()
         #import dill
         #if os.path.exists("worldFile.dill"):
         #    with open("worldFile.dill", "rb") as f:

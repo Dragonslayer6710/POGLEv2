@@ -115,13 +115,23 @@ class AABB(Collider):
 
 
     @classmethod
-    def from_min_max(cls, min: glm.vec3, max: glm.vec3):
+    def from_min_max(cls, min: Union[glm.vec2, glm.vec3], max: Union[glm.vec2, glm.vec3]):
+        if isinstance(min, glm.vec2):
+            min = glm.vec3(min[0], 0, min[1])
+        if isinstance(max, glm.vec2):
+            max = glm.vec3(max[0], 0, max[1])
         size: glm.vec3 = max - min
         pos: glm.vec3 = min + size / 2
         return cls._new(pos, size)
 
     @classmethod
-    def from_pos_size(cls, pos: glm.vec3, size: glm.vec3 = glm.vec3(1.0)):
+    def from_pos_size(cls, pos: Union[glm.vec2, glm.vec3], size: Optional[Union[glm.vec2, glm.vec3]] = None):
+        if isinstance(pos, glm.vec2):
+            pos = glm.vec3(pos[0], 0, pos[1])
+        if size is None:
+            size = glm.vec3(1)
+        elif isinstance(size, glm.vec2):
+            size = glm.vec3(size[0], 0, size[1])
         return cls._new(pos, size)
 
     @property

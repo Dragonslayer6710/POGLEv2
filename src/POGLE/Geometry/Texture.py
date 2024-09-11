@@ -65,7 +65,7 @@ class Texture:
 
 
 class TexDims:
-    def __init__(self, position: glm.vec2, size: glm.vec2):
+    def __init__(self, position: Optional[glm.vec2] = None, size: Optional[glm.vec2] = None):
         self.pos: glm.vec2 = position
         self.size: glm.vec2 = size
 
