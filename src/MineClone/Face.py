@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import copy
+
 from POGLE.Geometry.Texture import *
 from POGLE.Core.Core import *
 
@@ -13,7 +16,8 @@ def initFaceTextureAtlas():
 
 
 class Side(Enum):
-    West = 0
+    Null = -1
+    West = auto()
     South = auto()
     East = auto()
     North = auto()
@@ -31,7 +35,7 @@ _oppositeSide: dict[Side, Side] = {
 }
 
 
-class TexRef(Enum):
+class FaceID(Enum):
     Null = -1
     GrassTop = auto()
     Stone = auto()
@@ -40,21 +44,24 @@ class TexRef(Enum):
 
 
 class Face:
+    """
+    Represents a face of a block with its properties and visibility status.
+    """
     SERIALIZED_SIZE = struct.calcsize("hh")
-    def __init__(self, side: Union[int, Side], tex_ref: Union[int, TexRef] = TexRef.Null):
-        if isinstance(side, int):
-            side = Side(side)
-        self._side = side
-        self._tex_ref: TexRef = None
-        self._visible: bool = False
-        if tex_ref:
-            self.setTexID(tex_ref)
 
-    def setTexID(self, tex_ref: Union[int, TexRef] = TexRef.Null):
-        if isinstance(tex_ref, int):
-            tex_ref = TexRef(tex_ref + 1)
-        self._visible: bool = True if tex_ref.value else False
-        self._tex_ref = tex_ref
+    def __init__(self, face: Union[int, FaceID] = FaceID.Null, side: Union[int, Side] = Side.Null):
+        self._face: FaceID = None
+        self._visible: bool = False
+        if face:
+            self.set_face(face)
+        self._side: Optional[Side] = None
+        self.set_face_in_block(side)
+
+    def set_face(self, face: Union[int, FaceID] = FaceID.Null):
+        if isinstance(face, int):
+            face = FaceID(face + 1)
+        self.reveal() if face != FaceID.Null else self.hide()
+        self._face = face
 
     def _edit_visibility(self, visible) -> bool:
         if self._visible == visible:
@@ -68,11 +75,18 @@ class Face:
     def reveal(self) -> bool:
         return self._edit_visibility(True)
 
+    def set_face_in_block(self, side: Union[int, Side] = Side.Null):
+        if isinstance(side, int):
+            side = Side(side)
+        self._side = side
+
     def get_instance(self) -> bytes:
-        if self._visible and (self.tex_ref + 1):
+        if not self._side:
+            raise RuntimeError("Cannot Get Face Instance If No Side is Set")
+        if self.visible and self.face:
             return self.serialize()
         else:
-            return struct.pack("hH", -1, self.tex_ref)
+            return struct.pack("hH", -1, self.face)
 
     @property
     def visible(self) -> bool:
@@ -80,48 +94,72 @@ class Face:
 
     @property
     def side(self):
+        if not self._side:
+            raise RuntimeError("Cannot Get Side Enum Value If No Side is Set")
         return self._side.value
 
     @property
-    def tex_ref(self):
-        return self._tex_ref.value
+    def face(self):
+        return self._face.value
 
     @property
     def opposite(self):
+        if not self._side:
+            raise RuntimeError("Cannot Get Opposite Side If No Side is Set")
         return _oppositeSide[self._side]
 
     @property
     def texDims(self) -> Optional[TexDims]:
         if not _faceTextureAtlas:
             raise RuntimeError("Cannot get tex dims when _faceTextureAtlas is None")
-        if self._tex_ref.value + 1:
-            return _faceTextureAtlas.get_sub_texture(self._tex_ref.value)
+        if self._face.value + 1:
+            return _faceTextureAtlas.get_sub_texture(self._face.value)
         return None
 
     def serialize(self) -> bytes:
-        # Ensure that side and tex_ref are within the range of signed shorts
-        return struct.pack("hh", self.side, self.tex_ref)  # Pack side and tex_ref values as signed shorts
+        # Ensure that side and face are within the range of signed shorts
+        return struct.pack("hh", self.side, self.face)  # Pack side and face values as signed shorts
 
     @classmethod
     def deserialize(cls, packed_data: bytes) -> Face:
-        # Unpack the side and tex_ref values from the binary data
-        side_value, tex_ref_value = struct.unpack("hh", packed_data)
+        # Unpack the side and face values from the binary data
+        side_value, face_value = struct.unpack("hh", packed_data)
 
         # Convert the unpacked values back into their enum types
         return cls(
             side=Side(side_value),
-            tex_ref=TexRef(tex_ref_value)
+            face=FaceID(face_value)
         )
 
     def __repr__(self):
-        return f"Face({self._side}, {self._tex_ref}, visible={self.visible})"
+        return f"Face({self._side}, {self._face}, visible={self.visible})"
 
-# Example face serialization
-face = Face(Side.West, TexRef.GrassSide)
-serialized_face = face.serialize()
 
-# Deserialization example
-deserialized_face = Face.deserialize(serialized_face)
-print("Pre-Serialized Face:", face)
-print("Serialized Face:", serialized_face)
-print("Deserialized Face:", deserialized_face)
+_faces_dict: Dict[FaceID, bytes] = {
+    FaceID.Null: Face().serialize(),
+    FaceID.GrassTop: Face(FaceID.GrassTop).serialize(),
+    FaceID.Stone: Face(FaceID.Stone).serialize(),
+    FaceID.Dirt: Face(FaceID.Dirt).serialize(),
+    FaceID.GrassSide: Face(FaceID.GrassSide).serialize()
+}
+
+
+def get_face(faceID: FaceID = FaceID.Null) -> Face:
+    return Face.deserialize(_faces_dict[faceID])
+
+
+def NULL_FACE() -> Face:
+    return get_face()
+
+
+if __name__ == "__main__":
+    import time
+
+    # Example face serialization
+    face = Face(Side.West, FaceID.GrassSide)
+    serialized_face = face.serialize()
+
+    # Deserialization example
+    deserialized_face = Face.deserialize(serialized_face)
+    print("Pre-Serialized Face:", face)
+    print("Deserialized Face:", deserialized_face)

@@ -1,39 +1,48 @@
 from __future__ import annotations
 from MineClone.Block import *
 
+SECTION_WIDTH: int = 16
+SECTION_WIDTH_RANGE = range(SECTION_WIDTH)
+SECTION_NUM_BLOCKS = SECTION_WIDTH ** 2
+BLOCK_IN_SECTION_INDEX_RANGE = list(range(SECTION_NUM_BLOCKS))
+BLOCK_IN_SECTION_OFFSETS = [glm.vec3(x, 0, z) for x in SECTION_WIDTH_RANGE for z in SECTION_WIDTH_RANGE]
+SECTION_SIZE = glm.vec3(SECTION_WIDTH, 1, SECTION_WIDTH)
+SECTION_NULL_BLOCKS: List[Optional[Block]] = [NULL_BLOCK() for _ in BLOCK_IN_SECTION_INDEX_RANGE]
+SECTION_SERIALIZED_FMT_STRS = ["H", "ff"]
+SECTION_SERIALIZED_HEADER_SIZE = np.sum([struct.calcsize(fmt_str) for fmt_str in SECTION_SERIALIZED_FMT_STRS])
+SECTION_SERIALIZED_SIZE = SECTION_SERIALIZED_HEADER_SIZE + SECTION_NUM_BLOCKS * Block.SERIALIZED_SIZE
+SECTION_BLOCK_BYTES_START_LIST: List[List[int]] = [SECTION_SERIALIZED_HEADER_SIZE + i * Block.SERIALIZED_SIZE for i in
+                                                   range(SECTION_NUM_BLOCKS)]
+SECTION_BLOCK_BYTES_END_LIST: List[List[int]] = [SECTION_BLOCK_BYTES_START_LIST[i] + Block.SERIALIZED_SIZE for i in range(SECTION_NUM_BLOCKS)]
 
 class Section(PhysicalBox):
-    WIDTH: int = 16
-    NUM_BLOCKS = WIDTH * WIDTH
-    WIDTH_RANGE = range(WIDTH)
-    SIZE = glm.vec3(WIDTH, 1, WIDTH)
-    SERIALIZED_FMT_STRS = ["H", "ff"]
-    SERIALIZED_HEADER_SIZE = np.sum([struct.calcsize(fmt_str) for fmt_str in SERIALIZED_FMT_STRS])
-    SERIALIZED_SIZE = SERIALIZED_HEADER_SIZE + NUM_BLOCKS * Block.SERIALIZED_SIZE
+    def __init__(self, sectionPos: glm.vec2 = glm.vec2(), section_in_chunk_index: int = 0, blocks: Optional[List[BlockID]] = None):
+        super().__init__(AABB.from_pos_size(glm.vec3(sectionPos[0], 0, sectionPos[1])))
+        self.section_in_chunk_index: int = 0
 
-    _EMPTY_BLOCKS: List[Block] = None
+        self._solid_blocks_cache = 0
+        self._renderable_blocks_cache = 0
+        self._solid_cache_valid = False
+        self._renderable_cache_valid = False
 
-    def __init__(self, chunkY: int, chunkPos: glm.vec2, blocks: Optional[List[Block]] = None):
-        super().__init__(AABB.from_pos_size(glm.vec3(chunkPos[0], chunkY, chunkPos[1]), Section.SIZE))
-        if Section._EMPTY_BLOCKS is None:
-            Section._EMPTY_BLOCKS = [None for _ in Section.WIDTH_RANGE for _ in
-                                     Section.WIDTH_RANGE]  # Pre allocate blocks
-        self.chunk_index = chunkY
-        self.octree: Octree = Octree(self.bounds)
+        self.quadtree: QuadTree = None
 
-        self._solid_blocks: List[Block] = copy.deepcopy(Section._EMPTY_BLOCKS)
-        self._renderable_blocks: List[Block] = copy.deepcopy(Section._EMPTY_BLOCKS)
-        if not blocks:
-            self.blocks = copy.deepcopy(Section._EMPTY_BLOCKS)
-            for z in Section.WIDTH_RANGE:
-                for x in Section.WIDTH_RANGE:
-                    block = Block(self.chunk_index + (z * Section.WIDTH) + x, self.pos + glm.vec3(x, chunkY, z))
-                    self.blocks[block.block_in_section_index] = block
-                    self.update_block_in_lists(block)
-        else:
+        self._solid_blocks: List[Optional[Block]] = [None] * SECTION_NUM_BLOCKS
+        self._renderable_blocks: List[Optional[Block]] = [None] * SECTION_NUM_BLOCKS
+
+        self.blocks: List[Optional[Block]] = []
+
+        if blocks:
             self.blocks = blocks
-            for block in self.blocks:
-                self.update_block_in_lists(block)
+        else:
+            self.blocks = [NULL_BLOCK() for _ in BLOCK_IN_SECTION_INDEX_RANGE]
+        self.set_section_in_chunk(section_in_chunk_index)
+
+    def _init_block(self, block_in_section_index: int) -> Block:
+        block = self.blocks[block_in_section_index]
+        offset = BLOCK_IN_SECTION_OFFSETS[block_in_section_index]
+        block.set_block_in_chunk(self.section_in_chunk_index + block_in_section_index, self.pos + offset)
+        return block
 
     def update_block_in_lists(self, block: Block):
         index = block.block_in_section_index
@@ -43,73 +52,110 @@ class Section(PhysicalBox):
         if not self._solid_blocks[index]:
             if is_solid:
                 self._solid_blocks[index] = block
-                self.octree.insert(block)
+                self.quadtree.insert(block)
+                self._solid_cache_valid = False
         else:
             if not is_solid:
                 self._solid_blocks[index] = None
+                self._solid_cache_valid = False
+
         if not self._renderable_blocks[index]:
             if is_renderable:
                 self._renderable_blocks[index] = block
+                self._renderable_blocks_cache = False
         else:
             if not is_renderable:
                 self._renderable_blocks[index] = None
+                self._renderable_blocks_cache = False
+
+    def set_section_in_chunk(self, sectionY: int):
+        self.section_in_chunk_index = sectionY
+        self.bounds = AABB.from_pos_size(glm.vec3(self.pos.x, sectionY, self.pos.z), SECTION_SIZE)
+        self.quadtree = QuadTree.XZ(self.bounds)
+        for block in self.blocks:
+            self._init_block(block.block_in_section_index)
+            self.update_block_in_lists(block)
 
     def get_face_instances(self):
-        face_instances = b"".join([block.get_face_instances() for block in self._renderable_blocks])
+        return b"".join([block.get_face_instances() for block in self._renderable_blocks if block])
 
     def get_block_instances(self):
-        block_instances = b"".join(block.get_instance() for block in self._renderable_blocks)
+        return b"".join(block.get_instance() for block in self._renderable_blocks if block)
 
     @property
     def solid_blocks(self) -> int:
-        return len(self._solid_blocks)
+        if not self._solid_cache_valid:
+            self._solid_blocks_cache = sum(1 for block in self._solid_blocks if block)
+            self._solid_cache_valid = True
+        return self._solid_blocks_cache
 
     @property
     def renderable_blocks(self) -> int:
-        return len(self._renderable_blocks)
+        if not self._renderable_cache_valid:
+            self._renderable_blocks_cache = sum(1 for block in self._renderable_blocks if block)
+            self._renderable_cache_valid = True
+        return self._renderable_blocks_cache
+
+    def set_block(self, block_in_section_index: int, block_id: BlockID):
+        if BlockID.Air == block_id:
+            self.clear_block(block_in_section_index)
+            return
+        self.blocks[block_in_section_index].set_block(block_id)
+        self.update_block_in_lists(self.blocks[block_in_section_index])
+
+    def clear_block(self, block_in_section_index: int):
+        self.blocks[block_in_section_index].set_block(BlockID.Air)
+        self._solid_blocks[block_in_section_index] = None
+        self._renderable_blocks[block_in_section_index] = None
+        self._solid_cache_valid = False
+        self._renderable_cache_valid = False
 
     def serialize(self) -> bytes:
-        index_bytes = struct.pack("H", self.chunk_index)
+        index_bytes = struct.pack("H", self.section_in_chunk_index)
         pos_bytes = struct.pack("ff", *self.pos.xz)
-        section_header_bytes = index_bytes + pos_bytes
+        block_header_bytes = index_bytes + pos_bytes
 
-        block_bytes = b"".join(block.serialize() for block in self.blocks)
-        return section_header_bytes + block_bytes
+        block_bytes = b"".join(block.serialize() for block in self.blocks if block)
+        return block_header_bytes + block_bytes
 
     @classmethod
     def deserialize(cls, packed_data: bytes) -> Section:
-        # Unpack the section header
-        section_index = struct.unpack("H", packed_data[:2])[0]
-        chunkPos = glm.vec2(struct.unpack("ff", packed_data[2:10]))
+        section_in_chunk_index = struct.unpack("H", packed_data[:2])[0]
+        section_pos = glm.vec2(struct.unpack("ff", packed_data[2:10]))
 
-        blocks = copy.deepcopy(Section._EMPTY_BLOCKS)
-        # The remaining bytes are block data so iterate
-        for i in range(Section.NUM_BLOCKS):
-            # Extract the block bytes
-            start = Section.SERIALIZED_HEADER_SIZE + i * Block.SERIALIZED_SIZE
-            end = start + Block.SERIALIZED_SIZE
+        blocks = [None for _ in BLOCK_IN_SECTION_INDEX_RANGE]
+        for i in range(SECTION_NUM_BLOCKS):
+            start = SECTION_BLOCK_BYTES_START_LIST[i]
+            end = SECTION_BLOCK_BYTES_END_LIST[i]
             block_bytes = packed_data[start:end]
-
-            # Deserialize the block
             blocks[i] = Block.deserialize(block_bytes)
 
-        # Create a new instance of Section using the unpacked values and deserialized blocks
         return cls(
-            chunkY=section_index,
-            chunkPos=chunkPos,
+            sectionPos=section_pos,
+            section_in_chunk_index=section_in_chunk_index,
             blocks=blocks
         )
 
     def __repr__(self):
-        return f"Section(chunk_index: {self.chunk_index}, solid_blocks: {self.solid_blocks}, renderable_blocks:{self.renderable_blocks})"
+        return f"Section(block_index: {self.section_in_chunk_index}, solid_blocks: {self.solid_blocks}, renderable_blocks:{self.renderable_blocks})"
 
 
-# Example section serialization
-section = Section(chunkY=0, chunkPos=glm.vec2(0, 0))
-serialized_section = section.serialize()
+_NULL_SECTION_BYTES = Section().serialize()
 
-# Deserialization example
-deserialized_section = Section.deserialize(serialized_section)
-print("Pre-Serialized Section:", section)
-print("Serialized Section:", serialized_section)
-print("Deserialized Section:", deserialized_section)
+
+def NULL_SECTION():
+    return Section.deserialize(_NULL_SECTION_BYTES)
+
+
+if __name__ == "__main__":
+    import time
+
+    start_time = time.time()
+    [NULL_SECTION() for _ in range(256)]
+    end_time = time.time()
+    print(f"A: {end_time - start_time:.4f} seconds")
+
+    start_time = time.time()
+    [NULL_SECTION() for _ in range(256)]
+    end_time = time.time()
+    print(f"B: {end_time - start_time:.4f} seconds")

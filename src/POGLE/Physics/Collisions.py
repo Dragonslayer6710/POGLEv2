@@ -487,8 +487,8 @@ def test_aabb_frustum_intersection():
     print(f"AABB2 intersects with frustum: {aabb2.intersectFrustum(frustum)}")  # Expect True or False
     print(f"AABB3 intersects with frustum: {aabb3.intersectFrustum(frustum)}")  # Expect True or False
 
-
-# Run the test
-test_aabb_frustum_intersection()
+if __name__ == "__main__":
+    # Run the test
+    test_aabb_frustum_intersection()
 
 #quit()
