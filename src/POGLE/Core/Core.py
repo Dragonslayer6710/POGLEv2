@@ -1,17 +1,48 @@
 from POGLE.OGL.OpenGLContext import *
 import os, sys, random, copy
-from typing import Union, List, Optional, Tuple, TypeVar, Generic, Type, Dict, Any
+from typing import Optional, Union, Any, Dict, List, Mapping, Generic, TypeVar, Iterable, Tuple
 from enum import Enum, auto, unique
 from collections import deque, namedtuple
 import ctypes
 from ctypes import sizeof as c_sizeof
 import struct
 
-class RestrictedEnum(type(Enum)):
-    def __call__(cls, enum_obj: Enum):
-        raise RuntimeError(f"Calling {cls.__name__} is not allowed.")
+_K = TypeVar('_K')
+_V = TypeVar('_V')
+class _ImmutableDict(Mapping[_K, _V], Generic[_K, _V]):
+    def __init__(self, data: Optional[Union[Dict[_K, _V], Iterable[Tuple[_K, _V]]]] = None):
+        if data is None:
+            # Initialize with an empty dictionary
+            self._data = {}
+        elif isinstance(data, dict):
+            # Initialize with a dictionary
+            self._data = dict(data)
+        elif isinstance(data, Iterable):
+            # Initialize with an iterable of (key, value) tuples
+            self._data = dict(data)
+        else:
+            raise TypeError("Invalid type for 'data'. Expected dict or iterable of tuples.")
 
-REnum = RestrictedEnum
+    def __getitem__(self, key: _K) -> _V:
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return repr(self._data)
+
+ImDict = _ImmutableDict
+
+class _RestrictedEnum(type(Enum)):
+    def __call__(self, *args, **kwargs):
+        raise RuntimeError("Calling Enum with metaclass RestrictedEnum is forbidden!")
+
+class Renum(Enum, metaclass=_RestrictedEnum):
+    pass
 
 STRUCT_FORMAT_UNSIGNED_INT = "I"
 STRUCT_FORMAT_SHORT = "h"

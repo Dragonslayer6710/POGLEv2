@@ -1,167 +1,216 @@
-from MineClone.Section import *
+from __future__ import annotations
+from Section import *
+from Section import itertools
+
+from POGLE.Physics.SpatialTree import Octree
+
+CHUNK_BLOCK_HEIGHT: int = 256
+CHUNK_BLOCK_HEIGHT_HALF: int = CHUNK_BLOCK_HEIGHT // 2
+CHUNK_NUM_SECTIONS: int = CHUNK_BLOCK_HEIGHT
+CHUNK_HEIGHT_RANGE: range = range(CHUNK_NUM_SECTIONS)
+CHUNK_SECTION_RANGE: range = CHUNK_HEIGHT_RANGE
+CHUNK_SECTION_RANGE_LIST: List[int] = list(CHUNK_SECTION_RANGE)
+CHUNK_NUM_BLOCKS: int = CHUNK_NUM_SECTIONS * SECTION_NUM_BLOCKS
+CHUNK_BLOCK_EXTENTS: glm.vec3 = glm.vec3(SECTION_BLOCK_WIDTH, CHUNK_BLOCK_HEIGHT, SECTION_BLOCK_WIDTH)
+CHUNK_BLOCK_EXTENTS_HALF: glm.vec3 = CHUNK_BLOCK_EXTENTS / 2
+
+# Precompute offsets for each chunk
+BLOCK_OFFSETS_PER_SECTION: List[int] = [
+    SECTION_NUM_BLOCKS * chunk_id for chunk_id in CHUNK_SECTION_RANGE
+]
+
+# Use itertools.product to generate Cartesian product of x and z values
+SECTION_POSITIONS_IN_CHUNK = [
+    glm.vec3(SECTION_BLOCK_WIDTH * x, 0,
+             SECTION_BLOCK_WIDTH * z) - CHUNK_BLOCK_EXTENTS_HALF + SECTION_BLOCK_EXTENTS_HALF
+    for x, z in itertools.product(CHUNK_SECTION_RANGE, repeat=2)
+]
+
+CHUNK_BASE_CENTRE: glm.vec3 = glm.vec3(0, CHUNK_BLOCK_HEIGHT_HALF, 0)
+
+CHUNK_BASE_AABB: AABB = AABB.from_pos_size(
+    CHUNK_BASE_CENTRE,
+    CHUNK_BLOCK_EXTENTS
+)
+
+NULL_SECTIONS = [None] * CHUNK_NUM_SECTIONS
 
 
 class Chunk(PhysicalBox):
-    HEIGHT: int = 256
-    HEIGHT_RANGE = range(HEIGHT)
-    SIZE: glm.vec3 = glm.vec3(SECTION_WIDTH, HEIGHT, SECTION_WIDTH)
-    SERIALIZED_FMT_STRS = ["ff"]
-    SERIALIZED_HEADER_SIZE = np.sum([struct.calcsize(fmt_str) for fmt_str in SERIALIZED_FMT_STRS])
-    SERIALIZED_SIZE = SERIALIZED_HEADER_SIZE + HEIGHT * SECTION_SERIALIZED_SIZE
+    def __init__(self, id: int, aabb: AABB = CHUNK_BASE_AABB, section_offset: int = 0, region: 'Region' = None,
+                 chunk_data: Optional[Tuple[int, int]] = None):
+        super().__init__(aabb)
+        self.id: int = id
 
-    _NULL_SECTIONS: List[Section] = [NULL_SECTION() for _ in HEIGHT_RANGE]
+        from Region import Region
+        self.region: Region = region
 
-    def __init__(self, pos: glm.vec2, sections: Optional[List[Section]] = None, multi_threaded: bool = False):
-        super().__init__(AABB.from_pos_size(glm.vec3(pos[0], Chunk.HEIGHT / 2, pos[1]), Chunk.SIZE))
-        if Chunk._NULL_SECTIONS is None:
-            Chunk._NULL_SECTIONS = [None for _ in Chunk.HEIGHT_RANGE]
+        self.octree: Octree = Octree(self.bounds)
+        self.sections: List[Optional[Section]] = []
+        if chunk_data is None:
+            self._solid_sections: int = 0
+            self._solid_cache: List[Optional[int]] = NULL_SECTIONS.copy()
+            self._solid_cache_valid: bool = False
 
-        self._solid_sections_cache = 0
-        self._renderable_sections_cache = 0
-        self._solid_cache_valid = False
-        self._renderable_cache_valid = False
+            self._renderable_sections: int = 0
+            self._renderable_cache: List[Optional[int]] = NULL_SECTIONS.copy()
+            self._renderable_cache_valid: bool = False
 
-        self.sections: List[Section] = None
+            # self.section_range = list(range(section_offset, section_offset + CHUNK_NUM_SECTIONS))
 
-        self.octree: Octree = Octree(AABB.from_pos_size(self.pos, Chunk.SIZE), SECTION_SIZE)
-        self._solid_sections: List[Section] = copy.deepcopy(Chunk._NULL_SECTIONS)
-        self._renderable_sections: List[Section] = copy.deepcopy(Chunk._NULL_SECTIONS)
-        if sections:
-            self.sections: List[Section] = sections
-            [self.update_section_in_lists(section) for section in self.sections]
+            self.section_states = NULL_SECTIONS.copy()
+            self.sections: List[Optional[Section]] = NULL_SECTIONS.copy()
+            for section_id in CHUNK_SECTION_RANGE:
+                section = self.sections[section_id] = Section(
+                    section_id,
+                    AABB.from_pos_size(SECTION_POSITIONS_IN_CHUNK[section_id], SECTION_BLOCK_EXTENTS),
+                    section_id * SECTION_NUM_BLOCKS,
+                    self
+                )
+                self.update_section_in_lists(section)
         else:
-            self.sections: List[Section] = [NULL_SECTION() for _ in Chunk.HEIGHT_RANGE]
-            if multi_threaded:
-                pass
-            else:
-                for section_in_chunk_index in Chunk.HEIGHT_RANGE:
-                    section: Section = self.sections[section_in_chunk_index]
-                    self.set_section(section)
-                    self.update_section_in_lists(section)
+            self.section_range, self._solid_sections, self._renderable_sections = chunk_data
 
-    def _create_section(self, y: int, pos: glm.vec2) -> Section:
-        return Section(y, pos)
+    def is_section_solid(self, section_id: int):
+        return (self._solid_sections & (1 << section_id)) != 0
+
+    def section_is_solid(self, section: Section):
+        if not self.is_section_solid(section.id):  # if wasn't solid
+            self._solid_sections |= (1 << section.id)
+            self._solid_cache[section.id] = section
+            self.octree.insert(section)
+
+    def section_is_not_solid(self, section: Section):
+        if self.is_section_solid(section.id):  # if was solid
+            self._solid_sections &= ~(1 << section.id)
+            self._solid_cache[section.id] = None
+            self.octree.remove(section)
+
+    def is_section_renderable(self, section_id: int):
+        return (self._renderable_sections & (1 << section_id)) != 0
+
+    def section_is_renderable(self, section: Section):
+        if not self.is_section_renderable(section.id):  # if wasn't renderable
+            self._renderable_sections |= (1 << section.id)
+            self._renderable_cache[section.id] = section
+            self.octree.insert(section)
+
+    def section_is_not_renderable(self, section: Section):
+        if self.is_section_renderable(section.id):  # if was renderable
+            self._renderable_sections &= ~(1 << section.id)
+            self._renderable_cache[section.id] = None
+            self.octree.remove(section)
 
     def update_section_in_lists(self, section: Section):
-        index = section.section_in_chunk_index
-        is_solid = bool(section.solid_blocks)
-        is_renderable = bool(section.renderable_blocks)
-
-        if not self._solid_sections[index]:
-            if is_solid:
-                self._solid_sections[index] = section
-                self.octree.insert(section)
-                self._solid_cache_valid = False  # Invalidate the cache
+        if section.is_solid:
+            self.section_is_solid(section)
         else:
-            if not is_solid:
-                self._solid_sections[index] = None
-                self._solid_cache_valid = False  # Invalidate the cache
+            self.section_is_not_solid(section)
 
-        if not self._renderable_sections[index]:
-            if is_renderable:
-                self._renderable_sections[index] = section
-                self._renderable_sections_cache = False  # Invalidate the cache
+        if section.is_renderable:
+            self.section_is_renderable(section)
         else:
-            if not is_renderable:
-                self._renderable_sections[index] = None
-                self._renderable_sections_cache = False  # Invalidate the cache
+            self.section_is_not_renderable(section)
 
     def get_face_instances(self):
-        return b"".join([section.get_face_instances() for section in self._renderable_sections])
+        return b"".join([section.get_face_instances() for section in self.renderable_sections if section])
 
-    def get_section_instances(self):
-        return b"".join(section.get_block_instances() for section in self._renderable_sections)
+    def get_block_instances(self):
+        return b"".join([section.get_block_instances() for section in self.renderable_sections if section])
 
     @property
-    def solid_sections(self) -> int:
-        # Check if the cache is valid; if not, recalculate
+    def solid_sections(self):
         if not self._solid_cache_valid:
-            self._solid_sections_cache = sum(1 for section in self._solid_sections if section)
-            self._solid_cache_valid = True  # Mark the cache as valid
-        return self._solid_sections_cache
+            self._solid_cache = [section if self.is_section_solid(section) else None for section in self.sections]
+            self._solid_cache_valid = True
+        return self._solid_cache
 
     @property
-    def renderable_sections(self) -> int:
-        # Check if the cache is valid; if not, recalculate
+    def is_solid(self):
+        return bool(self._solid_sections)
+
+    @property
+    def renderable_sections(self):
         if not self._renderable_cache_valid:
-            self._renderable_sections_cache = sum(1 for section in self._renderable_sections if section)
-            self._renderable_cache_valid = True  # Mark the cache as valid
-        return self._renderable_sections_cache
+            self._renderable_cache = [section if self.is_section_renderable(section) else None for section in
+                                      self.sections]
+            self._renderable_cache_valid = True
+        return self._renderable_cache
 
-    def set_section(self, section: Section):
-        """An example of how a method that sets sections should invalidate caches as necessary."""
-        self.sections[section.section_in_chunk_index] = section
-        self.update_section_in_lists(section)
+    @property
+    def is_renderable(self):
+        return bool(self._renderable_sections)
 
-    def clear_section(self, section_index: int):
-        """An example of clearing a section and invalidating caches."""
-        self.sections[section_index] = None
-        self._solid_sections[section_index] = None
-        self._renderable_sections[section_index] = None
-        self._solid_cache_valid = False  # Invalidate solid sections cache
-        self._renderable_cache_valid = False  # Invalidate renderable sections cache
+    def serialize(self) -> Tuple[
+        bytes, bytes, bytes, bytes]:  # chunk_bytes, section_bytes, block_position_bytes, block_state_bytes
+        chunk_bytes = (
+                struct.pack("fff", self.pos.x, self.pos.y, self.pos.z) +
+                struct.pack("<H", self._solid_sections) +
+                struct.pack("<H", self._renderable_sections)  # +
+            # struct.pack("<I", self.section_range[0]) +
+            # struct.pack("<I", self.section_range[1])
+        )
+        section_bytes, block_position_bytes, block_state_bytes = Section.serialize_array(self.sections)
 
-    def serialize(self) -> bytes:
-        pos_bytes = struct.pack("ff", *self.pos.xz)
-        chunk_header_bytes = bytearray(pos_bytes)
-
-        for section in self.sections:
-            chunk_header_bytes.extend(section.serialize())
-
-        return bytes(chunk_header_bytes)
+        return chunk_bytes, section_bytes, block_position_bytes, block_state_bytes
 
     @classmethod
-    def deserialize(cls, packed_data: bytes) -> Section:
-        # Unpack the section header
-        pos = glm.vec2(struct.unpack("ff", packed_data[:8]))
-
-        sections = copy.deepcopy(Chunk._NULL_SECTIONS)
-        # The remaining bytes are section data so iterate
-        for i in Chunk.HEIGHT_RANGE:
-            # Extract the section bytes
-            start = Chunk.SERIALIZED_HEADER_SIZE + i * SECTION_SERIALIZED_SIZE
-            end = start + SECTION_SERIALIZED_SIZE
-            section_bytes = packed_data[start:end]
-
-            # Deserialize the section
-            sections[i] = Section.deserialize(section_bytes)
-
-        # Create a new instance of Chunk using the unpacked values and deserialized sections
-        return cls(
-            pos=pos,
-            sections=sections
+    def deserialize(cls, id: int, chunk_bytes: bytes, section_bytes: bytes, block_position_bytes: bytes,
+                    block_state_bytes: bytes, region: Optional['Region'] = None) -> Chunk:
+        chunk_pos = glm.vec3(*struct.unpack("fff", chunk_bytes[:12]))
+        chunk_data = (
+            struct.unpack("<H", chunk_bytes[12:14])[0],
+            struct.unpack("<H", chunk_bytes[14:])[0],
+            # struct.unpack("<I", chunk_bytes[16:20]),
+            # struct.unpack("<I", chunk_bytes[20:])
+        )
+        chunk = cls(
+            id=id,
+            aabb=AABB.from_pos_size(chunk_pos, CHUNK_BLOCK_EXTENTS),
+            region=region,
+            chunk_data=chunk_data,
         )
 
+        sections, blocks = Section.deserialize_array(
+            CHUNK_SECTION_RANGE_LIST,
+            (section_bytes, block_position_bytes, block_state_bytes),
+            chunk
+        )
+        chunk.sections = sections
+
+        return chunk
+
+    @staticmethod
+    def serialize_array(chunks: List[Chunk]) -> Tuple[bytes, bytes, bytes, bytes]:
+        chunk_bytes = b""
+        section_bytes = b""
+        block_position_bytes = b""
+        block_state_bytes = b""
+        for chunk in chunks:
+            chunk_bytes += chunk.serialize()[0]
+            section_bytes += chunk.serialize()[1]
+            block_position_bytes += chunk.serialize()[2]
+            block_state_bytes += chunk.serialize()[3]
+        return chunk_bytes, section_bytes, block_position_bytes, block_state_bytes
+
+    @staticmethod
+    def deserialize_array(ids: List[int], packed_data: Tuple[bytes, bytes, bytes, bytes], region: Optional['Region'] = None) -> Tuple[List[Chunk], List[Section], List[Block]]:
+        chunks = []
+        sections = []
+        blocks = []
+        for id, chunk_bytes, section_bytes, block_position_bytes, block_state_bytes in zip(ids, packed_data[0], packed_data[1], packed_data[2], packed_data[3]):
+            chunk, sections, blocks = Chunk.deserialize(id, chunk_bytes, section_bytes, block_position_bytes, block_state_bytes, region)
+            chunks.append(chunk)
+            sections.extend(sections)
+            blocks.extend(blocks)
+
+        return chunks, sections, blocks
+
     def __repr__(self):
-        return f"Chunk(solid_sections: {self.solid_sections}, renderable_sections:{self.renderable_sections})"
+        return f"Chunk(id={self.id}, pos={self.pos}, sections={self.sections})"
 
+    def __str__(self):
+        return self.__repr__()
 
-class ChunkRange(PhysicalBox):
-    def __init__(self, pos: glm.vec2, size: glm.vec2):
-        super().__init__(AABB.from_pos_size(pos, size))
-
-
-if __name__ == "__main__":
-    import time
-
-    # Test synchronous section generation
-    print("Testing Chunk generation...")
-    start_time = time.time()
-    syncro_chunk = Chunk(pos=glm.vec2(0, 0), multi_threaded=False)
-    end_time = time.time()
-    # serialized_syncro_chunk = syncro_chunk.serialize()
-    # deserialized_syncro_chunk = Chunk.deserialize(serialized_syncro_chunk)
-    print("Pre-Serialized Chunk:", syncro_chunk)
-    # print("Deserialized Synchronous Chunk:", deserialized_syncro_chunk)
-    print(f"Standard generation took {end_time - start_time:.4f} seconds")
-
-    # Test multi_threaded section generation
-    print("Testing Multi_Threaded Chunk generation...")
-    start_time = time.time()
-    multi_threaded_chunk = Chunk(pos=glm.vec2(0, 0), multi_threaded=True)
-    end_time = time.time()
-    # serialized_multi_threaded_chunk = multi_threaded_chunk.serialize()
-    # deserialized_multi_threaded_chunk = Chunk.deserialize(serialized_multi_threaded_chunk)
-    print("Pre-Serialized Multi_Threaded Chunk:", multi_threaded_chunk)
-    # print("Deserialized Multi_Threaded Chunk:", deserialized_multi_threaded_chunk)
-    print(f"Multi-Threaded generation took {end_time - start_time:.4f} seconds")
+if __name__ == '__main__':
+    Chunk(0)

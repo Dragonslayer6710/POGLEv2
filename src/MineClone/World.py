@@ -1,5 +1,4 @@
-import numpy as np
-
+from __future__ import annotations
 from Region import *
 
 WORLD_REGION_WIDTH_FACTOR: int = 3
@@ -9,7 +8,7 @@ WORLD_REGION_WIDTH_HALF: int = WORLD_REGION_WIDTH // 2
 WORLD_REGION_WIDTH_RANGE: range = range(-WORLD_REGION_WIDTH_HALF, WORLD_REGION_WIDTH_HALF + 1)
 WORLD_REGION_EXTENTS: glm.vec2 = glm.vec2(WORLD_REGION_WIDTH)
 WORLD_NUM_REGIONS: int = WORLD_REGION_WIDTH ** 2
-WORLD_REGION_RANGE: int = range(WORLD_NUM_REGIONS)
+WORLD_REGION_RANGE: range = range(WORLD_NUM_REGIONS)
 WORLD_NUM_CHUNKS: int = WORLD_NUM_REGIONS * REGION_NUM_CHUNKS
 WORLD_BLOCK_WIDTH: int = WORLD_REGION_WIDTH * REGION_BLOCK_WIDTH
 WORLD_BLOCK_WIDTH_HALF: int = WORLD_BLOCK_WIDTH // 2
@@ -38,16 +37,17 @@ REGION_AABBS: List[AABB] = [
 
 WORLD_BLOCK_CENTRE: glm.vec3 = glm.vec3(0, CHUNK_BLOCK_HEIGHT_HALF, 0)
 class World(PhysicalBox):
-    def __init__(self):
+    def __init__(self) -> World:
         super().__init__(AABB.from_pos_size(WORLD_BLOCK_CENTRE, WORLD_BLOCK_EXTENTS))
         self.chunk_offsets: List[int] = [
             chunk_start for chunk_start in CHUNK_OFFSETS_PER_REGION
         ]
-        self.regions: List[Region] = [None] * WORLD_NUM_REGIONS
+        self.regions: List[Optional[Region]] = [None] * WORLD_NUM_REGIONS
         self.blocks: Dict[int: Block] = {}
 
     def create_region(self, region_id: int):
         self.regions[region_id] = Region(
+            region_id,
             REGION_AABBS[region_id],
             self.chunk_offsets[region_id],
             self
