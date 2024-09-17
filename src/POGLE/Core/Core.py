@@ -1,11 +1,21 @@
 from POGLE.OGL.OpenGLContext import *
 import os, sys, random, copy
-from typing import Union, List, Optional, Tuple, TypeVar, Generic, Type, Dict
-from enum import Enum, auto
+from typing import Union, List, Optional, Tuple, TypeVar, Generic, Type, Dict, Any
+from enum import Enum, auto, unique
 from collections import deque, namedtuple
 import ctypes
 from ctypes import sizeof as c_sizeof
 import struct
+
+class RestrictedEnum(type(Enum)):
+    def __call__(cls, enum_obj: Enum):
+        raise RuntimeError(f"Calling {cls.__name__} is not allowed.")
+
+REnum = RestrictedEnum
+
+STRUCT_FORMAT_UNSIGNED_INT = "I"
+STRUCT_FORMAT_SHORT = "h"
+STRUCT_FORMAT_UNSIGNED_SHORT = "H"
 
 import glm
 import numpy as np

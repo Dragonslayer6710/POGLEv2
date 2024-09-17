@@ -7,13 +7,13 @@ SECTION_NUM_BLOCKS = SECTION_WIDTH ** 2
 BLOCK_IN_SECTION_INDEX_RANGE = list(range(SECTION_NUM_BLOCKS))
 BLOCK_IN_SECTION_OFFSETS = [glm.vec3(x, 0, z) for x in SECTION_WIDTH_RANGE for z in SECTION_WIDTH_RANGE]
 SECTION_SIZE = glm.vec3(SECTION_WIDTH, 1, SECTION_WIDTH)
-SECTION_NULL_BLOCKS: List[Optional[Block]] = [NULL_BLOCK() for _ in BLOCK_IN_SECTION_INDEX_RANGE]
+SECTION_NULL_BLOCKS: List[Optional[BlockState]] = [NULL_BLOCK_STATE() for _ in BLOCK_IN_SECTION_INDEX_RANGE]
 SECTION_SERIALIZED_FMT_STRS = ["H", "ff"]
 SECTION_SERIALIZED_HEADER_SIZE = np.sum([struct.calcsize(fmt_str) for fmt_str in SECTION_SERIALIZED_FMT_STRS])
-SECTION_SERIALIZED_SIZE = SECTION_SERIALIZED_HEADER_SIZE + SECTION_NUM_BLOCKS * Block.SERIALIZED_SIZE
-SECTION_BLOCK_BYTES_START_LIST: List[List[int]] = [SECTION_SERIALIZED_HEADER_SIZE + i * Block.SERIALIZED_SIZE for i in
+SECTION_SERIALIZED_SIZE = SECTION_SERIALIZED_HEADER_SIZE + SECTION_NUM_BLOCKS * BlockState.SERIALIZED_SIZE
+SECTION_BLOCK_BYTES_START_LIST: List[List[int]] = [SECTION_SERIALIZED_HEADER_SIZE + i * BlockState.SERIALIZED_SIZE for i in
                                                    range(SECTION_NUM_BLOCKS)]
-SECTION_BLOCK_BYTES_END_LIST: List[List[int]] = [SECTION_BLOCK_BYTES_START_LIST[i] + Block.SERIALIZED_SIZE for i in range(SECTION_NUM_BLOCKS)]
+SECTION_BLOCK_BYTES_END_LIST: List[List[int]] = [SECTION_BLOCK_BYTES_START_LIST[i] + BlockState.SERIALIZED_SIZE for i in range(SECTION_NUM_BLOCKS)]
 
 class Section(PhysicalBox):
     def __init__(self, sectionPos: glm.vec2 = glm.vec2(), section_in_chunk_index: int = 0, blocks: Optional[List[BlockID]] = None):
@@ -27,25 +27,25 @@ class Section(PhysicalBox):
 
         self.quadtree: QuadTree = None
 
-        self._solid_blocks: List[Optional[Block]] = [None] * SECTION_NUM_BLOCKS
-        self._renderable_blocks: List[Optional[Block]] = [None] * SECTION_NUM_BLOCKS
+        self._solid_blocks: List[Optional[BlockState]] = [None] * SECTION_NUM_BLOCKS
+        self._renderable_blocks: List[Optional[BlockState]] = [None] * SECTION_NUM_BLOCKS
 
-        self.blocks: List[Optional[Block]] = []
+        self.blocks: List[Optional[BlockState]] = []
 
         if blocks:
             self.blocks = blocks
         else:
-            self.blocks = [NULL_BLOCK() for _ in BLOCK_IN_SECTION_INDEX_RANGE]
+            self.blocks = [NULL_BLOCK_STATE() for _ in BLOCK_IN_SECTION_INDEX_RANGE]
         self.set_section_in_chunk(section_in_chunk_index)
 
-    def _init_block(self, block_in_section_index: int) -> Block:
+    def _init_block(self, block_in_section_index: int) -> BlockState:
         block = self.blocks[block_in_section_index]
         offset = BLOCK_IN_SECTION_OFFSETS[block_in_section_index]
-        block.set_block_in_chunk(self.section_in_chunk_index + block_in_section_index, self.pos + offset)
+        block.set_block_in_world(self.section_in_chunk_index, self.section_in_chunk_index + block_in_section_index)
         return block
 
-    def update_block_in_lists(self, block: Block):
-        index = block.block_in_section_index
+    def update_block_in_lists(self, block: BlockState):
+        index = block.section_in_chunk_index
         is_solid = block.is_solid
         is_renderable = block.is_renderable
 
@@ -73,7 +73,7 @@ class Section(PhysicalBox):
         self.bounds = AABB.from_pos_size(glm.vec3(self.pos.x, sectionY, self.pos.z), SECTION_SIZE)
         self.quadtree = QuadTree.XZ(self.bounds)
         for block in self.blocks:
-            self._init_block(block.block_in_section_index)
+            self._init_block(block.section_in_chunk_index)
             self.update_block_in_lists(block)
 
     def get_face_instances(self):
@@ -128,7 +128,7 @@ class Section(PhysicalBox):
             start = SECTION_BLOCK_BYTES_START_LIST[i]
             end = SECTION_BLOCK_BYTES_END_LIST[i]
             block_bytes = packed_data[start:end]
-            blocks[i] = Block.deserialize(block_bytes)
+            blocks[i] = BlockState.deserialize(block_bytes)
 
         return cls(
             sectionPos=section_pos,
@@ -147,15 +147,22 @@ def NULL_SECTION():
     return Section.deserialize(_NULL_SECTION_BYTES)
 
 
+def test_sections():
+    tests = CHUNK_HEIGHT
+    print(f"Testing Section generation with a Chunk's worth of sections: {tests}")
+    ns = NULL_SECTION()
+    ns_bytes = ns.serialize()
+
+    # Single-threaded deserialization
+    start_time = time.time()
+    for _ in range(tests):
+        section = Section.deserialize(ns_bytes)
+    end_time = time.time()
+    print(f"Deserialize: {end_time - start_time:.4f} seconds")
+
+import cProfile
+import pstats
+
 if __name__ == "__main__":
-    import time
-
-    start_time = time.time()
-    [NULL_SECTION() for _ in range(256)]
-    end_time = time.time()
-    print(f"A: {end_time - start_time:.4f} seconds")
-
-    start_time = time.time()
-    [NULL_SECTION() for _ in range(256)]
-    end_time = time.time()
-    print(f"B: {end_time - start_time:.4f} seconds")
+    #test_sections()
+    cProfile.run("test_sections()", "sections.prof")

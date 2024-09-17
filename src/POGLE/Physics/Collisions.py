@@ -92,7 +92,7 @@ class AABB(Collider):
     __create_key = object()
 
     @classmethod
-    def _new(cls, pos: glm.vec3, size: glm.vec3):
+    def _new(cls, pos: glm.vec3 = glm.vec3(), size: glm.vec3 = glm.vec3(1.0)):
         return AABB(cls.__create_key, pos, size)
 
     def __init__(self, create_key, pos: glm.vec3, size: glm.vec3):
@@ -415,7 +415,7 @@ class AABB(Collider):
 _collider = Collider
 
 class Physical:
-    _collider: Collider | None
+    _collider: Optional[Collider]
 
     def __init__(self, collider: type(_collider) = None):
         self._collider = collider
@@ -426,10 +426,11 @@ class Physical:
     def recallHit(self, collider: Collider | glm.vec3) -> Hit:
         return self._collider.recallHit(collider)
 
-class PhysicalBox(Physical):
-    _collider: AABB | None
 
-    def __init__(self, bounds: AABB | None = None):
+class PhysicalBox(Physical):
+    _collider: Optional[AABB]
+
+    def __init__(self, bounds: Optional[AABB] = None):
         super().__init__(bounds)
 
     @property
@@ -445,16 +446,22 @@ class PhysicalBox(Physical):
         return self.bounds.pos
 
     @pos.setter
-    def pos(self, newPos: glm.vec3):
-        self.bounds.pos = newPos
+    def pos(self, new_pos: glm.vec3):
+        if self.bounds is None:
+            self.bounds = AABB.from_pos_size(pos=new_pos)
+        else:
+            self.bounds.pos = new_pos
 
     @property
     def size(self) -> glm.vec3:
         return self.bounds.size
 
     @size.setter
-    def size(self, newSize: glm.vec3):
-        self.bounds.size = newSize
+    def size(self, new_size: glm.vec3):
+        if self.bounds is None:
+            self.bounds = AABB.from_pos_size(size=new_size)
+        else:
+            self.bounds.size = new_size
 
     @property
     def half(self) -> glm.vec3:
