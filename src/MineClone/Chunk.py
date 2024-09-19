@@ -1,8 +1,9 @@
 from __future__ import annotations
-from Section import *
-from Section import itertools
 
-from POGLE.Physics.SpatialTree import Octree
+import pickle
+
+from Section import *
+from Section import itertools, cProfile, timeit, copy
 
 CHUNK_BLOCK_HEIGHT: int = 256
 CHUNK_BLOCK_HEIGHT_HALF: int = CHUNK_BLOCK_HEIGHT // 2
@@ -23,7 +24,7 @@ BLOCK_OFFSETS_PER_SECTION: List[int] = [
 SECTION_POSITIONS_IN_CHUNK = [
     glm.vec3(SECTION_BLOCK_WIDTH * x, 0,
              SECTION_BLOCK_WIDTH * z) - CHUNK_BLOCK_EXTENTS_HALF + SECTION_BLOCK_EXTENTS_HALF
-    for x, z in itertools.product(CHUNK_SECTION_RANGE, repeat=2)
+    for x, z in itertools.product(SECTION_BLOCK_WIDTH_RANGE, repeat=2)
 ]
 
 CHUNK_BASE_CENTRE: glm.vec3 = glm.vec3(0, CHUNK_BLOCK_HEIGHT_HALF, 0)
@@ -35,14 +36,18 @@ CHUNK_BASE_AABB: AABB = AABB.from_pos_size(
 
 NULL_SECTIONS = [None] * CHUNK_NUM_SECTIONS
 
+SECTION_AABBS_IN_CHUNK: List[AABB] = [
+    copy(SECTION_BASE_AABB) for pos in SECTION_POSITIONS_IN_CHUNK
+]
 
 class Chunk(PhysicalBox):
-    def __init__(self, id: int, aabb: AABB = CHUNK_BASE_AABB, section_offset: int = 0, region: 'Region' = None,
+    def __init__(self, id: int, aabb: AABB = CHUNK_BASE_AABB, section_offset: int = 0, region: Region = None,
                  chunk_data: Optional[Tuple[int, int]] = None):
         super().__init__(aabb)
+        section_aabbs = [copy(aabb) for aabb in SECTION_AABBS_IN_CHUNK]
+
         self.id: int = id
 
-        from Region import Region
         self.region: Region = region
 
         self.octree: Octree = Octree(self.bounds)
@@ -63,7 +68,7 @@ class Chunk(PhysicalBox):
             for section_id in CHUNK_SECTION_RANGE:
                 section = self.sections[section_id] = Section(
                     section_id,
-                    AABB.from_pos_size(SECTION_POSITIONS_IN_CHUNK[section_id], SECTION_BLOCK_EXTENTS),
+                    section_aabbs[section_id],
                     section_id * SECTION_NUM_BLOCKS,
                     self
                 )
@@ -212,5 +217,13 @@ class Chunk(PhysicalBox):
     def __str__(self):
         return self.__repr__()
 
-if __name__ == '__main__':
-    Chunk(0)
+
+
+if __name__ == "__main__":
+    def test():
+        Chunk(0)
+    num_tests = 1
+    filename = "chunk"
+    cProfile.run(f"[test() for _ in range({num_tests})]", f"{filename}.prof")
+
+from Region import Region

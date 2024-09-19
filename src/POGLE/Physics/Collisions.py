@@ -2,6 +2,7 @@ import glm
 
 from POGLE.Core.Core import *
 
+
 class Collider:
     pass
 
@@ -21,6 +22,7 @@ class AABB:
     size: glm.vec3
     min: glm.vec3
     max: glm.vec3
+
 
 class Frustum:
     class Intersection:
@@ -47,7 +49,6 @@ class Frustum:
         self.planes = Frustum.get_frustum_planes(view_matrix, proj_matrix)
 
 
-
 class Collider:
     hitRecall: dict[Collider, dict[Collider | glm.vec3, Hit]] = {}
 
@@ -58,6 +59,7 @@ class Collider:
     def recallHit(self, collider: Collider | glm.vec3) -> Hit | None:
         if self.hitRecall.get(collider):
             return self.hitRecall.pop(collider)
+
 
 class Ray(Collider):
     __create_key = object()
@@ -88,6 +90,7 @@ class Ray(Collider):
     def __str__(self):
         return f"Ray(origin: {self.start}, dir: {self.dir}, normal: {self.normal}, end: {self.end})"
 
+
 class AABB(Collider):
     __create_key = object()
 
@@ -102,17 +105,24 @@ class AABB(Collider):
         self.pos: glm.vec3 = pos
         self.size: glm.vec3 = size
         self._bounds: list[glm.vec3] = [self.min, self.max]
-        self._corners = [
-            self.min,
-            glm.vec3(self.max.x, self.min.y, self.min.z),
-            glm.vec3(self.min.x, self.max.y, self.min.z),
-            glm.vec3(self.max.x, self.max.y, self.min.z),
-            glm.vec3(self.min.x, self.min.y, self.max.z),
-            glm.vec3(self.max.x, self.min.y, self.max.z),
-            glm.vec3(self.min.x, self.max.y, self.max.z),
-            self.max
-        ]
+        self._corner_cache = []
+        self._corner_cache_valid = False
 
+    @property
+    def _corners(self):
+        if not self._corner_cache_valid:
+            self._corner_cache = [
+                self.min,
+                glm.vec3(self.max.x, self.min.y, self.min.z),
+                glm.vec3(self.min.x, self.max.y, self.min.z),
+                glm.vec3(self.max.x, self.max.y, self.min.z),
+                glm.vec3(self.min.x, self.min.y, self.max.z),
+                glm.vec3(self.max.x, self.min.y, self.max.z),
+                glm.vec3(self.min.x, self.max.y, self.max.z),
+                self.max
+            ]
+            self._corner_cache_valid = True
+        return self._corner_cache
 
     @classmethod
     def from_min_max(cls, min: Union[glm.vec2, glm.vec3], max: Union[glm.vec2, glm.vec3]):
@@ -125,12 +135,10 @@ class AABB(Collider):
         return cls._new(pos, size)
 
     @classmethod
-    def from_pos_size(cls, pos: Union[glm.vec2, glm.vec3], size: Optional[Union[glm.vec2, glm.vec3]] = None):
+    def from_pos_size(cls, pos: Union[glm.vec2, glm.vec3], size: Optional[Union[glm.vec2, glm.vec3]] = glm.vec3(1)):
         if isinstance(pos, glm.vec2):
             pos = glm.vec3(pos[0], 0, pos[1])
-        if size is None:
-            size = glm.vec3(1)
-        elif isinstance(size, glm.vec2):
+        if isinstance(size, glm.vec2):
             size = glm.vec3(size[0], 0, size[1])
         return cls._new(pos, size)
 
@@ -412,7 +420,9 @@ class AABB(Collider):
     def __str__(self):
         return f"AABB(pos: {self.pos}, size: {self.size})"
 
+
 _collider = Collider
+
 
 class Physical:
     _collider: Optional[Collider]
@@ -494,8 +504,9 @@ def test_aabb_frustum_intersection():
     print(f"AABB2 intersects with frustum: {aabb2.intersectFrustum(frustum)}")  # Expect True or False
     print(f"AABB3 intersects with frustum: {aabb3.intersectFrustum(frustum)}")  # Expect True or False
 
+
 if __name__ == "__main__":
     # Run the test
     test_aabb_frustum_intersection()
 
-#quit()
+# quit()

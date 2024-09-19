@@ -114,11 +114,14 @@ BLOCK_EXTENTS_HALF: glm.vec3 = BLOCK_EXTENTS / 2
 BLOCK_STATE_SERIALIZED_SIZE = struct.calcsize("H")  # For BlockID
 BLOCK_SERIALIZED_SIZE: int = BLOCK_STATE_SERIALIZED_SIZE + struct.calcsize("fff")  # For position
 
+BLOCK_BASE_AABB: AABB = AABB.from_pos_size(glm.vec3())
 
 class Block(PhysicalBox):
-    def __init__(self, id: int, pos: glm.vec3, block_state: BlockState, section: 'Section' = None) -> Block:
-        super().__init__(AABB.from_pos_size(pos))
+    def __init__(self, id: int, aabb: AABB, block_state: BlockState, section: Optional[Section] = None) -> Block:
+        super().__init__(aabb)
         self.id: int = id
+
+        self.section: Section = section
 
         self._neighbour_refs: ImDict[Side, int] = {}
 
@@ -202,7 +205,7 @@ class Block(PhysicalBox):
         return struct.pack("fff", self.pos.x, self.pos.y, self.pos.z), self.state.serialize()
 
     @classmethod
-    def deserialize(cls, id: int, packed_data: Tuple[bytes, bytes], section: 'Section') -> Block:
+    def deserialize(cls, id: int, packed_data: Tuple[bytes, bytes], section: Section) -> Block:
         # Unpack the serialized data
         return cls(
             id=id,
@@ -221,7 +224,7 @@ class Block(PhysicalBox):
         return block_position_bytes, block_state_bytes
 
     @staticmethod
-    def deserialize_array(ids: List[int],packed_data: Tuple[bytes, bytes], section: 'Section') -> Tuple[List[Block], List[BlockState]]:
+    def deserialize_array(ids: List[int],packed_data: Tuple[bytes, bytes], section: Section) -> Tuple[List[Block], List[BlockState]]:
         blocks = []
         block_states = []
         for i in range(len(ids)):
@@ -235,3 +238,6 @@ class Block(PhysicalBox):
 
     def __str__(self):
         return self.__repr__()
+
+
+from Section import Section
