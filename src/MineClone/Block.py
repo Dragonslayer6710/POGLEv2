@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from Section import Section
+
 from Face import *
 from Face import _face_tex_cache
 
 from POGLE.Physics.Collisions import PhysicalBox, AABB
+
+from POGLE.Core.Core import ImDict
 
 from POGLE.Core.Core import Union, Any, Dict, List, Tuple
 from POGLE.Core.Core import np
@@ -12,24 +19,24 @@ from POGLE.Core.Core import struct
 
 from dataclasses import dataclass, field
 
+_biType = np.ushort
+
 
 class BlockID(Renum):
-    Air = 0
-    Grass = auto()
-    Dirt = auto()
-    Stone = auto()
+    Air = _biType(0)
+    Grass = _biType(1)
+    Dirt = _biType(2)
+    Stone = _biType(3)
 
 
-_block_id_cache: ImDict[int, BlockID] = ImDict(
-    {member.value: member for member in BlockID}
-)
+_block_id_cache: np.ndarray = np.array([member for member in BlockID], dtype=object)
 
 _all_block_states_set: bool = False
 
 
 @dataclass
 class BlockState:
-    block_id: Union[np.uint16, BlockID]
+    block_id: Union[np.ushort, BlockID]
     face_textures: List[FaceTex]
     is_solid: bool = True
     is_opaque: bool = True
@@ -39,8 +46,9 @@ class BlockState:
     def __post_init__(self):
         if _all_block_states_set:
             raise RuntimeError("Cannot call __init__ once all block states have been created")
-        if isinstance(self.block_id, np.uint16):
-            self.block_id: BlockID = _block_id_cache[self.block_id]
+        if isinstance(self.block_id, np.ushort):
+            self.block_id: BlockID = _block_id_cache[self.block_id].item()
+
         self.face_textures_as_shorts = [face_tex.value for face_tex in self.face_textures]
 
     @property
@@ -69,7 +77,7 @@ class BlockState:
         return list(map(BlockState, unpacked_data))
 
     def __repr__(self):
-        return f"Block(id: {self.value}, name: {self.name}, solid: {self.is_solid}, opaque: {self.is_opaque}, visible_faces:{self._visible_faces})"
+        return f"Block(id: {self.value}, name: {self.name}, solid: {self.is_solid}, opaque: {self.is_opaque})"
 
     def __str__(self):
         return self.__repr__()
@@ -84,20 +92,20 @@ _block_state_cache: ImDict[BlockID, BlockState] = ImDict({
 _all_block_states_set = True
 NULL_BLOCK_STATE = _block_state_cache[BlockID.Air]
 
+_sType = np.byte
+
 
 class Side(Renum):
-    Null = -1,
-    West = auto()
-    South = auto()
-    East = auto()
-    North = auto()
-    Top = auto()
-    Bottom = auto()
+    Null = _sType(-1),
+    West = _sType(0)
+    South = _sType(1)
+    East = _sType(2)
+    North = _sType(3)
+    Top = _sType(4)
+    Bottom = _sType(5)
 
 
-_side_cache: ImDict[int, Side] = ImDict(
-    {member.value: member for member in Side}
-)
+_side_cache: np.ndarray = np.array([member for member in Side], dtype=object)  # type: ignore
 
 _opposite_side: ImDict[Side, Side] = ImDict({
     Side.West: Side.East,
@@ -116,6 +124,7 @@ BLOCK_SERIALIZED_SIZE: int = BLOCK_STATE_SERIALIZED_SIZE + struct.calcsize("fff"
 
 BLOCK_BASE_AABB: AABB = AABB.from_pos_size(glm.vec3())
 
+
 class Block(PhysicalBox):
     def __init__(self, id: int, aabb: AABB, block_state: BlockState, section: Optional[Section] = None) -> Block:
         super().__init__(aabb)
@@ -123,7 +132,7 @@ class Block(PhysicalBox):
 
         self.section: Section = section
 
-        self._neighbour_refs: ImDict[Side, int] = {}
+        self._neighbour_refs: ImDict[Side, int] = ImDict({side: -1 for side in Side})
 
         self.state: BlockState = block_state
 
@@ -201,7 +210,21 @@ class Block(PhysicalBox):
             self._visible_faces |= (1 << side.value)
             self._visible_cache += 1
 
-    def serialize(self) -> Tuple[bytes, bytes]: # (position, block_state)
+    def get_face_instances(self) -> bytes:
+        face_bytes: bytes = b""
+        for side in range(6):
+            if self.is_side_visible(side):
+                face_bytes += (
+                        struct.pack("B", side) +
+                        struct.pack("H", self.state.face_textures_as_shorts[side])
+                )
+            else:
+                face_bytes += (
+                    struct.pack("B", -1) +
+                    struct.pack("H", 0)
+                )
+
+    def serialize(self) -> Tuple[bytes, bytes]:  # (position, block_state)
         return struct.pack("fff", self.pos.x, self.pos.y, self.pos.z), self.state.serialize()
 
     @classmethod
@@ -215,7 +238,7 @@ class Block(PhysicalBox):
         )
 
     @staticmethod
-    def serialize_array(blocks: List[Block]) -> Tuple[bytes, bytes]: # (block_positions, block_states)
+    def serialize_array(blocks: List[Block]) -> Tuple[bytes, bytes]:  # (block_positions, block_states)
         block_position_bytes = b""
         block_state_bytes = b""
         for block in blocks:
@@ -224,7 +247,8 @@ class Block(PhysicalBox):
         return block_position_bytes, block_state_bytes
 
     @staticmethod
-    def deserialize_array(ids: List[int],packed_data: Tuple[bytes, bytes], section: Section) -> Tuple[List[Block], List[BlockState]]:
+    def deserialize_array(ids: List[int], packed_data: Tuple[bytes, bytes], section: Section) -> Tuple[
+        List[Block], List[BlockState]]:
         blocks = []
         block_states = []
         for i in range(len(ids)):
@@ -238,6 +262,3 @@ class Block(PhysicalBox):
 
     def __str__(self):
         return self.__repr__()
-
-
-from Section import Section

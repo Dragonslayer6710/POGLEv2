@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import pickle
-
 from Block import *
 from Block import _block_state_cache
 
+if TYPE_CHECKING:
+    from Chunk import Chunk
+
 from POGLE.Physics.SpatialTree import Octree
 
+import pickle
 import itertools
 from timeit import timeit
 import cProfile
@@ -227,5 +229,3 @@ if __name__ == "__main__":
     num_tests = 256
     filename = "section"
     cProfile.run(f"[test() for _ in range({num_tests})]", f"{filename}.prof")
-
-from Chunk import Chunk

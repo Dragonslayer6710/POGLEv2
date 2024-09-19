@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import pickle
-
 from Section import *
-from Section import itertools, cProfile, timeit, copy
+
+if TYPE_CHECKING:
+    from Region import Region
 
 CHUNK_BLOCK_HEIGHT: int = 256
 CHUNK_BLOCK_HEIGHT_HALF: int = CHUNK_BLOCK_HEIGHT // 2
@@ -225,5 +225,3 @@ if __name__ == "__main__":
     num_tests = 1
     filename = "chunk"
     cProfile.run(f"[test() for _ in range({num_tests})]", f"{filename}.prof")
-
-from Region import Region

@@ -1,8 +1,11 @@
 from __future__ import annotations
+
+import numpy as np
+
 from POGLE.Geometry.Texture import UniformTextureAtlas
 
 from POGLE.Core.Core import Optional
-from POGLE.Core.Core import auto, ImDict, Renum
+from POGLE.Core.Core import Renum
 from POGLE.Core.Core import glm
 
 _faceTextureAtlas: Optional[UniformTextureAtlas] = None
@@ -15,13 +18,15 @@ def initFaceTextureAtlas():
     _faceTextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
 
 
-class FaceTex(Renum):
-    Null = -1
-    GrassTop = auto()
-    Stone = auto()
-    Dirt = auto()
-    GrassSide = auto()
+_ftType = np.short
 
-_face_tex_cache: ImDict[int, FaceTex] = ImDict(
-    {member.value: member for member in FaceTex}
-)
+
+class FaceTex(Renum):
+    Null = _ftType(-1)
+    GrassTop = _ftType(0)
+    Stone = _ftType(1)
+    Dirt = _ftType(2)
+    GrassSide = _ftType(3)
+
+
+_face_tex_cache: np.array = np.array([member for member in FaceTex])
