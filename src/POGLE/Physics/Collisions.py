@@ -1,4 +1,7 @@
+import struct
+
 import glm
+import numpy as np
 
 from POGLE.Core.Core import *
 
@@ -108,6 +111,7 @@ class AABB(Collider):
         self._corner_cache = []
         self._corner_cache_valid = False
 
+
     @property
     def _corners(self):
         if not self._corner_cache_valid:
@@ -135,7 +139,7 @@ class AABB(Collider):
         return cls._new(pos, size)
 
     @classmethod
-    def from_pos_size(cls, pos: Union[glm.vec2, glm.vec3], size: Optional[Union[glm.vec2, glm.vec3]] = glm.vec3(1)):
+    def from_pos_size(cls, pos: Union[glm.vec2, glm.vec3] = glm.vec3(), size: Optional[Union[glm.vec2, glm.vec3]] = glm.vec3(1)):
         if isinstance(pos, glm.vec2):
             pos = glm.vec3(pos[0], 0, pos[1])
         if isinstance(size, glm.vec2):

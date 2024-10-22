@@ -1,11 +1,12 @@
 from POGLE.OGL.OpenGLContext import *
 import os, sys, random, copy
-from typing import Optional, Union, Any, Dict, List, Mapping, Generic, TypeVar, Iterable, Tuple
+from typing import Optional, Union, Any, Dict, List, Mapping, Generic, TypeVar, Iterable, Tuple, Type, Set
 from enum import Enum, auto, unique
 from collections import deque, namedtuple
 import ctypes
 from ctypes import sizeof as c_sizeof
 import struct
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 _K = TypeVar('_K')
 _V = TypeVar('_V')

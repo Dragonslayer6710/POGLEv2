@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
-    from Section import Section
+    from Chunk import Chunk
 
 from Face import *
 from Face import _face_tex_cache
-
-from POGLE.Physics.Collisions import PhysicalBox, AABB
 
 from POGLE.Core.Core import ImDict
 
@@ -16,8 +15,15 @@ from POGLE.Core.Core import Union, Any, Dict, List, Tuple
 from POGLE.Core.Core import np
 
 from POGLE.Core.Core import struct
+from POGLE.Physics.Collisions import PhysicalBox, AABB
 
-from dataclasses import dataclass, field
+from timeit import timeit
+import cProfile
+from copy import copy, deepcopy
+import pickle
+
+import struct
+import nbtlib
 
 _biType = np.ushort
 
@@ -31,66 +37,55 @@ class BlockID(Renum):
 
 _block_id_cache: np.ndarray = np.array([member for member in BlockID], dtype=object)
 
-_all_block_states_set: bool = False
 
-
-@dataclass
-class BlockState:
-    block_id: Union[np.ushort, BlockID]
-    face_textures: List[FaceTex]
+@dataclass(frozen=True)
+class BlockData:
+    name: str
+    id: BlockID
+    face_textures: Optional[List[FaceTex]]
     is_solid: bool = True
     is_opaque: bool = True
-
-    face_textures_as_shorts: List[np.short] = field(default_factory=list)
+    states: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        if _all_block_states_set:
-            raise RuntimeError("Cannot call __init__ once all block states have been created")
-        if isinstance(self.block_id, np.ushort):
-            self.block_id: BlockID = _block_id_cache[self.block_id].item()
+        # Populate the states dictionary with child class attributes
+        # Use the attribute names and their values to populate the states
+        for key, value in self.__dict__.items():
+            if key not in ['name', 'face_textures', 'states']:
+                # Assigning to the states dict
+                self.states[key] = value if not isinstance(value, BlockID) else value.value
 
-        self.face_textures_as_shorts = [face_tex.value for face_tex in self.face_textures]
+    def to_nbt(self) -> nbtlib.Compound:
+        return nbtlib.Compound({
+          "BlockID": nbtlib.Int(self.id.value)
+        })
 
-    @property
-    def name(self) -> str:
-        return self.block_id.name
-
-    @property
-    def value(self) -> int:
-        return self.block_id.value
-
-    def serialize(self) -> bytes:
-        return struct.pack("H", self.value)
-
-    @classmethod
-    def deserialize(cls, packed_data: bytes) -> BlockState:
-        # Unpack the serialized data
-        return cls(block_id=np.frombuffer(packed_data, dtype=np.uint16)[0])
-
-    @staticmethod
-    def serialize_array(block_states: list[BlockState]) -> bytes:
-        return struct.pack(f'<{len(block_states)}H', *[bs.value for bs in block_states])
-
-    @staticmethod
-    def deserialize_array(packed_data: bytes) -> list[BlockState]:
-        unpacked_data = struct.unpack(f'<{len(packed_data) // 2}H', packed_data)
-        return list(map(BlockState, unpacked_data))
-
-    def __repr__(self):
-        return f"Block(id: {self.value}, name: {self.name}, solid: {self.is_solid}, opaque: {self.is_opaque})"
-
-    def __str__(self):
-        return self.__repr__()
+@dataclass(frozen=True)
+class Grass(BlockData):
+    grass_type: Literal["grass", "mycelium", "podzol"] = "grass"
+    snowy: bool = False
 
 
-_block_state_cache: ImDict[BlockID, BlockState] = ImDict({
-    BlockID.Air: BlockState(BlockID.Air, [FaceTex.Null] * 6, False, False),
-    BlockID.Dirt: BlockState(BlockID.Dirt, [FaceTex.Dirt] * 6),
-    BlockID.Grass: BlockState(BlockID.Grass, [FaceTex.GrassSide] * 4 + [FaceTex.GrassTop, FaceTex.Dirt]),
-    BlockID.Stone: BlockState(BlockID.Stone, [FaceTex.Stone] * 6)
+@dataclass(frozen=True)
+class Dirt(BlockData):
+    dirt_type: Literal["normal", "coarse"] = "normal"
+
+
+@dataclass(frozen=True)
+class Stone(BlockData):
+    stone_type: Literal[
+        "stone", "granite", "granite_smooth", "diorite", "diorite_smooth", "andesite", "andesite_smooth"
+    ] = "stone"
+
+
+_block_data_cache: Dict[BlockData] = ImDict({
+    BlockID.Air: BlockData("Air", BlockID.Air, None, False, False),
+    BlockID.Grass: Grass("Grass", BlockID.Grass, (FaceTex.GrassSide,) * 4 + (FaceTex.GrassTop, FaceTex.Dirt)),
+    BlockID.Dirt: Dirt("Dirt", BlockID.Dirt, (FaceTex.Dirt,) * 6),
+    BlockID.Stone: Stone("Stone", BlockID.Stone, (FaceTex.Stone,) * 6)
 })
-_all_block_states_set = True
-NULL_BLOCK_STATE = _block_state_cache[BlockID.Air]
+
+AIR_BLOCK_DATA = _block_data_cache[BlockID.Air]
 
 _sType = np.byte
 
@@ -124,31 +119,66 @@ BLOCK_SERIALIZED_SIZE: int = BLOCK_STATE_SERIALIZED_SIZE + struct.calcsize("fff"
 
 BLOCK_BASE_AABB: AABB = AABB.from_pos_size(glm.vec3())
 
+_neighbour_offset: Dict[Side, glm.vec3] = {
+    Side.West: glm.vec3(-1, 0, 0),
+    Side.South: glm.vec3(0, 0, 1),
+    Side.East: glm.vec3(1, 0, 0),
+    Side.North: glm.vec3(0, 0, -1),
+    Side.Top: glm.vec3(0, 1, 0),
+    Side.Bottom: glm.vec3(0, -1, 0)
+}
 
-class Block(PhysicalBox):
-    def __init__(self, id: int, aabb: AABB, block_state: BlockState, section: Optional[Section] = None) -> Block:
-        super().__init__(aabb)
-        self.id: int = id
 
-        self.section: Section = section
+@dataclass
+class MCPhys(PhysicalBox):
+    index: int = 0
 
-        self._neighbour_refs: ImDict[Side, int] = ImDict({side: -1 for side in Side})
+    def __post_init__(self):
+        super().__init__(self.__aabb)
 
-        self.state: BlockState = block_state
+    def __init_subclass__(cls, aabb: Union[glm.vec3, AABB], size: Optional[glm.vec3] = None):
+        if isinstance(aabb, glm.vec3):
+            if size is None:
+                size = aabb
+            aabb = AABB.from_pos_size(aabb, size)
+        elif not isinstance(aabb, AABB):
+            raise TypeError("MCPhys subclasses must receive AABB data in their definitions by giving an AABB or"
+                            " position and size")
+        cls.__aabb = aabb
 
-        self._visible_faces: int = 0
-        self._visible_cache: int = 0
-        self._visible_cache_valid: bool = False
+
+@dataclass
+class Block(MCPhys, aabb=BLOCK_BASE_AABB):
+    data: BlockData = AIR_BLOCK_DATA
+    _visible_faces: int = 0
+    _visible_cache: int = 0
+    _visible_cache_valid: bool = False
+
+    chunk: Optional[Chunk] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def initialize(self, chunk: Optional[Chunk] = None):
+        if chunk:
+            if self.chunk:
+                raise RuntimeError("Attempted to set chunk of a block already set in a chunk")
+            self.chunk = chunk
+        self.pos += self.chunk.pos
 
     def neighbour(self, side: Union[int, Side], blocks: List[Block]):
         return
 
-    def set_state(self, block_state: Union[BlockID, BlockState]):
-        if isinstance(block_state, BlockID):
-            block_state = _block_state_cache[block_state]
+    def set(self, block_data: Union[int, BlockID, BlockData]):
+        if isinstance(block_data, int):
+            block_data = _block_data_cache[
+                _block_id_cache[block_data]
+            ]
+        elif isinstance(block_data, BlockID):
+            block_data = _block_data_cache[block_data]
         was_solid = self.is_solid
         was_opaque = self.is_opaque
-        self.state = block_state
+        self.data = block_data
         if was_solid and not self.is_solid:
             pass
 
@@ -157,15 +187,15 @@ class Block(PhysicalBox):
 
     @property
     def block_id(self) -> BlockID:
-        return self.state.block_id
+        return self.data.id
 
     @property
     def name(self) -> str:
-        return self.state.name
+        return self.data.name
 
     @property
     def value(self) -> int:
-        return self.state.value
+        return self.data.value
 
     @property
     def is_air(self) -> bool:
@@ -173,11 +203,11 @@ class Block(PhysicalBox):
 
     @property
     def is_solid(self) -> bool:
-        return self.state.is_solid
+        return self.data.is_solid
 
     @property
     def is_opaque(self) -> bool:
-        return self.state.is_opaque
+        return self.data.is_opaque
 
     @property
     def is_renderable(self) -> bool:
@@ -216,24 +246,24 @@ class Block(PhysicalBox):
             if self.is_side_visible(side):
                 face_bytes += (
                         struct.pack("B", side) +
-                        struct.pack("H", self.state.face_textures_as_shorts[side])
+                        struct.pack("H", self.data.face_textures_as_shorts[side])
                 )
             else:
                 face_bytes += (
-                    struct.pack("B", -1) +
-                    struct.pack("H", 0)
+                        struct.pack("B", -1) +
+                        struct.pack("H", 0)
                 )
 
     def serialize(self) -> Tuple[bytes, bytes]:  # (position, block_state)
-        return struct.pack("fff", self.pos.x, self.pos.y, self.pos.z), self.state.serialize()
+        return struct.pack("fff", self.pos.x, self.pos.y, self.pos.z), self.data.serialize()
 
     @classmethod
-    def deserialize(cls, id: int, packed_data: Tuple[bytes, bytes], section: Section) -> Block:
+    def deserialize(cls, block_in_section_id: int, packed_data: Tuple[bytes, bytes], section: Section) -> Block:
         # Unpack the serialized data
         return cls(
-            id=id,
-            pos=glm.vec3(struct.unpack("fff", packed_data[0])),
-            block_state=BlockState.deserialize(packed_data[1]),
+            id=block_in_section_id,
+            _aabb=AABB.from_pos_size(glm.vec3(struct.unpack("fff", packed_data[0]))),
+            data=BlockState.deserialize(packed_data[1]),
             section=section
         )
 
@@ -243,22 +273,29 @@ class Block(PhysicalBox):
         block_state_bytes = b""
         for block in blocks:
             block_position_bytes += struct.pack("fff", block.pos.x, block.pos.y, block.pos.z)
-            block_state_bytes += block.state.serialize()
+            block_state_bytes += block.data.serialize()
         return block_position_bytes, block_state_bytes
 
     @staticmethod
     def deserialize_array(ids: List[int], packed_data: Tuple[bytes, bytes], section: Section) -> Tuple[
-        List[Block], List[BlockState]]:
+        List[Block], List[BlockData]]:
         blocks = []
         block_states = []
         for i in range(len(ids)):
             block = Block.deserialize(ids[i], packed_data[i], section)
             blocks.append(block)
-            block_states.append(block.state)
+            block_states.append(block.data)
         return blocks, block_states
 
-    def __repr__(self):
-        return f"Block(id={self.id}, pos={self.pos}, state={self.state})"
+    def to_nbt(self) -> nbtlib.Compound:
+        return self.data.to_nbt()
 
-    def __str__(self):
-        return self.__repr__()
+
+if __name__ == "__main__":
+    def test():
+        Block(0)
+
+
+    num_tests = 1_000_000
+    filename = "block"
+    cProfile.run(f"[test() for _ in range({num_tests})]", f"{filename}.prof")

@@ -69,6 +69,13 @@ class SpatialTree:
         self.divisions: int = 2 ** int(np.sum(activeDimensions))
         self.root: SpatialTree.Node = SpatialTree.Node(bounds, self.activeDimensions, self.divisions)
         self.minSize: glm.vec3 = minSize
+        self.to_insert: Set[PhysicalBox] = set()
+        self.to_remove: Set[PhysicalBox] = set()
+
+    def queue_insert(self, obj: PhysicalBox) -> bool:
+        if obj in self.to_remove:
+            self.to_remove.remove(obj)
+        self.to_insert.add(obj)
 
     def insert(self, obj: PhysicalBox, node: Node = None) -> bool:
         if node is None:
@@ -108,6 +115,11 @@ class SpatialTree:
         if objectsMoved != len(node.objects):
             assert "some objects were not moved when subdividing"
         node.clear_objects()
+
+    def queue_remove(self, obj: PhysicalBox) -> bool:
+        if obj in self.to_remove:
+            self.to_remove.remove(obj)
+        self.to_insert.add(obj)
 
     def remove(self, obj: PhysicalBox, node: Node = None) -> bool:
         """
@@ -220,6 +232,12 @@ class SpatialTree:
                 if child and node.is_node_active(i):
                     self.query_segment(ray, result, child)
             return result
+
+    def update(self):
+        for _ in range(len(self.to_insert)):
+            self.insert(self.to_insert.pop())
+        for _ in range(len(self.to_remove)):
+            self.remove(self.to_remove.pop())
 
 class Octree(SpatialTree):
     def __init__(self, bounds: AABB, minSize: glm.vec3 = glm.vec3(1)):
