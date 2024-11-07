@@ -5,7 +5,12 @@ import glm
 import numpy as np
 
 from MineClone.World import *
+from POGLE.Physics.Collisions import Hit, Ray
 from POGLE.Renderer.Camera import *
+from POGLE.Core.Application import GetApplication
+
+from POGLE.Geometry.Data import NMM
+from POGLE.Renderer.Mesh import CubeMesh
 
 _PLAYER_DIMENSIONS: glm.vec3 = glm.vec3(0.8, 1.8, 0.8)
 _PLAYER_HALF_DIMENSIONS = _PLAYER_DIMENSIONS / 2

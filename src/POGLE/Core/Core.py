@@ -1,7 +1,7 @@
 from POGLE.OGL.OpenGLContext import *
 import os, sys, random, copy
 from typing import Optional, Union, Any, Dict, List, Mapping, Generic, TypeVar, Iterable, Tuple, Type, Set
-from enum import Enum, auto, unique
+from enum import Enum, auto, unique, IntEnum
 from collections import deque, namedtuple
 import ctypes
 from ctypes import sizeof as c_sizeof
@@ -42,7 +42,7 @@ class _RestrictedEnum(type(Enum)):
     def __call__(self, *args, **kwargs):
         raise RuntimeError("Calling Enum with metaclass RestrictedEnum is forbidden!")
 
-class Renum(Enum, metaclass=_RestrictedEnum):
+class Renum(IntEnum, metaclass=_RestrictedEnum):
     pass
 
 STRUCT_FORMAT_UNSIGNED_INT = "I"
@@ -83,9 +83,35 @@ def BIT(x):
 def POGLE_BIND_EVENT_FN(fn): return lambda *args, **kwargs: fn(*args, **kwargs)
 
 
-cwd = os.getcwd()
-
+proj_dir = os.path.abspath(__file__).split("\\src")[0]
 
 def split_array(l: np.ndarray, n: int) -> np.ndarray:
     k, m = divmod(len(l), n)
     return np.array([l[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)], l.dtype)
+
+
+def filter_out_none(iterable: Iterable, iterable_type=tuple):
+    return iterable_type(filter(
+        lambda x: x is not None,
+        iterable
+    ))
+
+def interleave_attributes(attribute_lists, filtered=False):
+    if not filtered:
+        attribute_lists = filter_out_none(attribute_lists)
+    # Determine the number of attributes and the number of vertices
+    num_attributes = len(attribute_lists)
+    num_vertices = len(attribute_lists[0])
+
+    # Create a list to hold the interleaved data
+    interleaved = []
+
+    # Iterate over the number of vertices
+    for i in range(num_vertices):
+        for attribute in attribute_lists:
+            if attribute is not None and i < len(attribute):
+                attr_elem = attribute[i]
+                interleaved.append(attr_elem if isinstance(attr_elem, Iterable) else [attr_elem])
+
+    # Convert the interleaved list back into a numpy array
+    return np.concatenate(interleaved) if isinstance(interleaved[0], Iterable) else np.array(interleaved)

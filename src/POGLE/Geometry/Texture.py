@@ -9,7 +9,7 @@ class Texture:
     def __init__(self, textureFile: str):
         self.ID = glGenTextures(1)
 
-        texImg = Image.open(f"{cwd}/../assets/textures/{textureFile}").transpose(
+        texImg = Image.open(f"{proj_dir}\\assets\\textures\\{textureFile}").transpose(
             Image.Transpose.FLIP_TOP_BOTTOM
         ).convert("RGBA")
         self._Size: glm.vec2 = glm.vec2(texImg.size)

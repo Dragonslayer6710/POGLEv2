@@ -1,21 +1,30 @@
 from __future__ import annotations
 
+import random
 from itertools import repeat
 
 from io import BytesIO
 import zlib
+
+from glm import float32
+from perlin_noise import PerlinNoise
+
+noise = PerlinNoise(octaves=4, seed=99)
 
 import os.path
 import pickle
 
 import nbtlib
 import numpy as np
+from Tools.i18n.msgfmt import generate
 
 from Block import *
 from Entity import *
 from Biome import *
+
 from dataclasses import dataclass, field
 from typing import Set
+from collections import deque
 
 if TYPE_CHECKING:
     from Region import Region
@@ -23,9 +32,10 @@ if TYPE_CHECKING:
 from POGLE.Physics.SpatialTree import Octree
 
 CHUNK_BLOCK_WIDTH = 16
+
 _CHUNK_BLOCK_HORIZONTAL_ID_RANGE = range(CHUNK_BLOCK_WIDTH)
 
-CHUNK_BLOCK_HEIGHT = 256
+CHUNK_BLOCK_HEIGHT = 64
 _CHUNK_BLOCK_VERTICAL_ID_RANGE = range(CHUNK_BLOCK_HEIGHT)
 
 CHUNK_BLOCK_EXTENTS = glm.vec3(CHUNK_BLOCK_WIDTH, CHUNK_BLOCK_HEIGHT, CHUNK_BLOCK_WIDTH)
@@ -43,7 +53,7 @@ SECTION_NUM_BIOMES = 1
 CHUNK_NUM_BIOMES = SECTION_NUM_BIOMES * CHUNK_BLOCK_HEIGHT
 CHUNK_BIOME_NONE_LIST = [None] * CHUNK_NUM_BIOMES
 
-_CHUNK_NULL_HEIGHT_MAP: Tuple[int] = tuple([0] * int(CHUNK_NUM_BLOCKS / CHUNK_BLOCK_HEIGHT))
+_CHUNK_NULL_HEIGHT_MAP: List[int] = [0] * int(CHUNK_NUM_BLOCKS / CHUNK_BLOCK_HEIGHT)
 
 CHUNK_BASE_AABB = AABB.from_pos_size(size=CHUNK_BLOCK_EXTENTS)
 
@@ -118,23 +128,16 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
     blocks: Tuple[Block, ...] = field(default_factory=lambda: [Block(i) for i in _CHUNK_BLOCK_ID_RANGE])
     entities: List[Entity] = field(default_factory=list)
     tile_entities: List[TileEntity] = field(default_factory=list)
-    height_map: Tuple[int] = field(default_factory=lambda: copy(_CHUNK_NULL_HEIGHT_MAP))
+    height_map: List[int] = field(default_factory=lambda: copy(_CHUNK_NULL_HEIGHT_MAP))
     biome_data: Tuple[Biome] = field(default_factory=lambda: [None for _ in range(CHUNK_NUM_BIOMES)])
 
+    _from_nbt: bool = False
     timestamp: Optional[int] = 0
     region: Optional[Region] = None
 
     def __post_init__(self):
         super().__post_init__()
-        self.uninitialized: bool = True
-
-        self.octree: Optional[Octree] = None
-
-        self._solid_dict: Dict[int, Block] = {}
-        self._solid_bitmask: int = 0
-        self._solid_list_cache: List[Block] = []
-        self._num_solid_cache: int = 0
-        self._solid_cache_valid: bool = False
+        self.initialized: bool = False
 
         self._renderable_dict: Dict[int, Block] = {}
         self._renderable_bitmask: int = 0
@@ -145,52 +148,107 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
         self.status = "empty"
         self.last_update: int = 0
 
+        self._update_deque: deque[Block] = deque()
+        self._awaiting_update: bool = False
+
+        self.initialized: bool = False
+
+        self.block_face_instances: np.ndarray[np.int32] = np.empty((CHUNK_NUM_BLOCKS*6*3,), dtype=np.int32)
+        self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK_NUM_BLOCKS,), dtype=np.ndarray)
+
         if self.region:
             self.initialize()
+
+    @staticmethod
+    def generate_height(x: float, z: float, scale: float = 100) -> int:
+        # Normalize the noise output to the range [0, 1]
+        noise_value = noise([x / scale, z / scale])
+        normalized_height = (noise_value + 1) / 2  # Normalize to [0, 1]
+
+        # Scale the height to the range [0, CHUNK_BLOCK_HEIGHT - 1]
+        height = int(normalized_height * (CHUNK_BLOCK_HEIGHT - 1))
+        return height
+
+    def _get_zx_offset(self, x: int, z: int) -> int:
+        return (z * CHUNK_BLOCK_WIDTH) + x
+
+    def _get_block_id(self, x: int, y: int, z: Optional[int] = None):
+        if z is None:
+            zx_offset = x
+        else:
+            zx_offset = self._get_zx_offset(x, z)
+        return (y * CHUNK_BLOCK_WIDTH ** 2) + zx_offset
 
     def initialize(self, region: Optional[Region] = None):
         if region:
             if self.region:
                 raise RuntimeError("Attempted to set region of a chunk already set in a region")
             self.region = region
-
         self.pos += self.region.pos
-
-        self.octree = Octree(self.bounds)
-
         self.pos -= CHUNK_BLOCK_EXTENTS / 2
-        for block in self.blocks:
-            block.initialize(self)
-            self.update_block_in_lists(block)
+        if self._from_nbt:
+            for block in self.blocks:
+                self.block_face_instances[block.index: block.index+18] = block.face_instances
+                block.initialize(self)
+                self.block_instances[block.index] = NMM(block.pos)
+        else:
+            cnt = 0
+            for z in _CHUNK_BLOCK_HORIZONTAL_ID_RANGE:
+                for x in _CHUNK_BLOCK_HORIZONTAL_ID_RANGE:
+                    height = Chunk.generate_height(self.pos.x + x, self.pos.z + z)
+                    zx_offset = self._get_zx_offset(x, z)
+                    self.height_map[zx_offset] = height
+                    for y in _CHUNK_BLOCK_VERTICAL_ID_RANGE:
+                        yzx_offset = self._get_block_id(zx_offset, y)
+                        block: Block = self.blocks[yzx_offset]
+                        if y <= height:
+                            if y < height - 5:
+                                block.set(BlockID.Stone)
+                            elif y < height - 1:
+                                block.set(BlockID.Dirt)
+                            else:
+                                block.set(BlockID.Grass)
+                            cnt+=1
+                        self.block_face_instances[block.index: block.index+18] = block.face_instances
+                        block.pos += glm.vec3(x,y,z)
+                        block.initialize(self)
+                        self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
+            print(CHUNK_NUM_BLOCKS)
+            print(cnt)
+            #quit()
+                    #if z == 1 and x == 1:
+                    #    quit()
         self.pos += CHUNK_BLOCK_EXTENTS / 2
 
-        self.uninitialized = False
-        self.octree.update()
+        self.enqueue_update()
+        self.initialized = True
 
-    def _is_block_solid(self, block: Block):
-        return self._solid_bitmask & _BLOCK_MASKS[block.index]
+    def enqueue_update(self):
+        if self._awaiting_update:
+            raise RuntimeError("Attempted to put Chunk into update queue whilst already awaiting an update")
+        self._awaiting_update = True
+        self.region.enqueue_chunk(self)
 
-    def _block_is_solid(self, block: Block):
-        if not self._is_block_solid(block):  # Check if Block was not solid
-            self._solid_dict[block.index] = block
-            self._solid_bitmask |= _BLOCK_MASKS[block.index]
-            self._solid_cache_valid = False
+    def stack_update(self):
+        if self._awaiting_update:
+            raise RuntimeError("Attempted to put Chunk into update queue whilst already awaiting an update")
+        self._awaiting_update = True
+        self.region.stack_chunk(self)
 
-            if self.uninitialized:
-                self.octree.queue_insert(block)
-            else:
-                self.octree.insert(block)
+    def enqueue_block(self, block: Block):
+        self._update_deque.append(block)
 
-    def _block_is_not_solid(self, block: Block):
-        if self._is_block_solid(block):  # Check if Block was solid
-            self._solid_dict.pop(block.index)
-            self._solid_bitmask &= ~_BLOCK_MASKS[block.index]
-            self._solid_cache_valid = False
+    def stack_block(self, block: Block):
+        self._update_deque.appendleft(block)
 
-            if self.uninitialized:
-                self.octree.queue_remove(block)
-            else:
-                self.octree.remove(block)
+    def update(self):
+        if not self._awaiting_update:
+            return  # Shouldn't be possible
+        while self._update_deque:
+            block = self._update_deque.popleft()
+            block.update()
+            self.update_block_in_lists(block)
+        self._awaiting_update = False
 
     def _is_block_renderable(self, block: Block):
         return self._renderable_bitmask & _BLOCK_MASKS[block.index]
@@ -208,36 +266,10 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
             self._renderable_cache_valid = False
 
     def update_block_in_lists(self, block: Block):
-        if block.is_solid:
-            self._block_is_solid(block)
-        else:
-            self._block_is_not_solid(block)
-
         if block.is_renderable:
             self._block_is_renderable(block)
         else:
             self._block_is_not_renderable(block)
-
-    def _validate_solid_cache(self):
-        self._solid_list_cache = self._solid_dict.values()
-        self._num_solid_cache = len(self._solid_list_cache)
-        self._solid_cache_valid = True
-
-    @property
-    def solid_blocks(self):
-        if not self._solid_cache_valid:
-            self._validate_solid_cache()
-        return self._solid_list_cache
-
-    @property
-    def num_solid_blocks(self):
-        if not self._solid_cache_valid:
-            self._validate_solid_cache()
-        return self._num_solid_cache
-
-    @property
-    def is_solid(self) -> bool:
-        return bool(self._num_solid_cache)
 
     def _validate_renderable_cache(self):
         self._renderable_list_cache = self._renderable_dict.values()
@@ -259,6 +291,13 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
     @property
     def is_renderable(self) -> bool:
         return bool(self._num_renderable_cache)
+
+    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
+        if self.bounds.intersectPoint(block_pos):
+            local_pos = [int(i) for i in block_pos - self.pos]
+            return self.blocks[self._get_block_id(*local_pos)]
+        else:
+            return self.region.get_block(block_pos)
 
     def to_nbt(self) -> nbtlib.Compound:
         return nbtlib.Compound({
@@ -334,6 +373,7 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
         blocks = []
         section_block_range = SECTION_BLOCK_RANGE  # Cache SECTION_BLOCK_RANGE
         _Block = Block  # Cache Block class
+        block_in_chunk_index = 0
         for section in nbt_data["sections"]:
             y = section["Y"] + 128  # Reverse the Y calculation
             block_states = section["block_states"]  # Call function to parse block states
@@ -344,11 +384,13 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
                 #    _Block(block_states_palette[palette_index]["BlockID"])
                 #    for palette_index in enumerate(block_states_data)
                 # ])
-                palette_block_ids = [block_states_palette[entry]["BlockID"] for entry in block_states_data]
-                blocks.extend(_Block(block_id) for block_id in palette_block_ids)
+                blocks.extend(
+                    _Block.from_nbt(block_in_chunk_index, block_states_palette[entry]) for entry in block_states_data
+                )
             else:
-                default_block_id = block_states_palette[0]["BlockID"]
-                blocks.extend(repeat(_Block(default_block_id), len(section_block_range)))
+                default_block_nbt = block_states_palette[0]
+                blocks.extend(_Block.from_nbt(block_in_chunk_index, default_block_nbt) for _ in section_block_range)
+            block_in_chunk_index += 1
             # biomes = parse_biomes(section["biomes"])  # Call function to parse biomes
             # block_light = section["BlockLight"]  # Byte array, can be used directly or processed
             # sky_light = section["SkyLight"]
@@ -362,7 +404,7 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
             #     "sky_light": sky_light
             # })
 
-        chunk = Chunk(nbt_data["index"], blocks)
+        chunk = Chunk(int(nbt_data["index"]), blocks, _from_nbt=True)
         chunk.pos = glm.vec3(nbt_data["xPos"], CHUNK_BLOCK_HEIGHT / 2,
                              nbt_data["zPos"])  # Assuming Position is a class that holds x and z
         chunk.status = nbt_data["Status"]
@@ -426,10 +468,32 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
             chunk_nbt = nbtlib.File.parse(f)
         return cls.from_nbt(chunk_nbt)
 
+    def get_shape(self):
+        return DataLayout(
+            [
+                VertexAttribute("a_Position", TexQuad._positions),
+                VertexAttribute("a_Alpha", [1.0, 1.0, 1.0, 1.0]),
+                VertexAttribute("a_TexUV", TexQuad._tex_uvs),
+                VertexAttribute("a_Model", list(self.block_instances))
+            ]
+        )
+        return BlockShape(
+            self.block_instances,
+            self.block_face_instances
+        )
 
 class _Region:
     pos: glm.vec3 = glm.vec3()
+    chunks: List[Chunk] = []
+    def enqueue_chunk(self, chunk: Chunk):
+        self.chunks.append(chunk)
 
+    def update(self):
+        for chunk in self.chunks:
+            chunk.update()
+
+    def get_block(self, block_pos: glm.vec3):
+        return None
 
 if __name__ == "__main__":
     a: Chunk = Chunk(0)

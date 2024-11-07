@@ -3,11 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 from dataclasses import dataclass, field
 
+import glm
+
+from POGLE.Geometry.Data import NMM
+from POGLE.Renderer.Mesh import *
+from POGLE.Shader import ShaderProgram, UniformBuffer, UniformBlock
+
 if TYPE_CHECKING:
     from Chunk import Chunk
 
 from Face import *
-from Face import _face_tex_cache
+from Face import _face_tex_id_cache, _faceTextureAtlas
 
 from POGLE.Core.Core import ImDict
 
@@ -42,7 +48,8 @@ _block_id_cache: np.ndarray = np.array([member for member in BlockID], dtype=obj
 class BlockData:
     name: str
     id: BlockID
-    face_textures: Optional[List[FaceTex]]
+    face_textures: Optional[List[FaceTexID]] = field(default_factory=lambda: [FaceTexID.Null for _ in range(6)])
+    face_sizes: Optional[List[FaceSizeID]] = field(default_factory=lambda: [FaceSizeID.Full for _ in range(6)])
     is_solid: bool = True
     is_opaque: bool = True
     states: Dict[str, Any] = field(default_factory=dict)
@@ -51,14 +58,15 @@ class BlockData:
         # Populate the states dictionary with child class attributes
         # Use the attribute names and their values to populate the states
         for key, value in self.__dict__.items():
-            if key not in ['name', 'face_textures', 'states']:
+            if key not in ['name', 'face_textures', 'face_sizes', 'states']:
                 # Assigning to the states dict
-                self.states[key] = value if not isinstance(value, BlockID) else value.value
+                self.states[key] = value
 
     def to_nbt(self) -> nbtlib.Compound:
         return nbtlib.Compound({
-          "BlockID": nbtlib.Int(self.id.value)
+            "BlockID": nbtlib.Int(self.id)
         })
+
 
 @dataclass(frozen=True)
 class Grass(BlockData):
@@ -80,9 +88,13 @@ class Stone(BlockData):
 
 _block_data_cache: Dict[BlockData] = ImDict({
     BlockID.Air: BlockData("Air", BlockID.Air, None, False, False),
-    BlockID.Grass: Grass("Grass", BlockID.Grass, (FaceTex.GrassSide,) * 4 + (FaceTex.GrassTop, FaceTex.Dirt)),
-    BlockID.Dirt: Dirt("Dirt", BlockID.Dirt, (FaceTex.Dirt,) * 6),
-    BlockID.Stone: Stone("Stone", BlockID.Stone, (FaceTex.Stone,) * 6)
+    BlockID.Grass: Grass(
+        "Grass",
+        BlockID.Grass,
+        (FaceTexID.GrassSide,) * 4 + (FaceTexID.GrassTop, FaceTexID.Dirt),
+    ),
+    BlockID.Dirt: Dirt("Dirt", BlockID.Dirt, (FaceTexID.Dirt,) * 6),
+    BlockID.Stone: Stone("Stone", BlockID.Stone, (FaceTexID.Stone,) * 6)
 })
 
 AIR_BLOCK_DATA = _block_data_cache[BlockID.Air]
@@ -100,7 +112,7 @@ class Side(Renum):
     Bottom = _sType(5)
 
 
-_side_cache: np.ndarray = np.array([member for member in Side], dtype=object)  # type: ignore
+_side_cache: np.ndarray[Side] = np.array([member for member in Side], dtype=object)  # type: ignore
 
 _opposite_side: ImDict[Side, Side] = ImDict({
     Side.West: Side.East,
@@ -128,13 +140,19 @@ _neighbour_offset: Dict[Side, glm.vec3] = {
     Side.Bottom: glm.vec3(0, -1, 0)
 }
 
+_FACE_MASKS = tuple(1 << i for i in range(6))
+
+import uuid
+
 
 @dataclass
 class MCPhys(PhysicalBox):
     index: int = 0
 
     def __post_init__(self):
-        super().__init__(self.__aabb)
+        self._id = MCPhys.index  # uuid.uuid4()  # Generate a unique UUID for this instance
+        MCPhys.index += 1
+        super().__init__(deepcopy(self.__aabb))  # Initialize the parent class
 
     def __init_subclass__(cls, aabb: Union[glm.vec3, AABB], size: Optional[glm.vec3] = None):
         if isinstance(aabb, glm.vec3):
@@ -147,17 +165,50 @@ class MCPhys(PhysicalBox):
         cls.__aabb = aabb
 
 
+_face_model_mats: Dict[Side, glm.mat4] = {
+    Side.East: NMM(glm.vec3(-1.0, 0, 0), glm.vec3(0, 90, 0)),
+    Side.South: NMM(glm.vec3(0, 0, 1.0)),
+    Side.West: NMM(glm.vec3(1.0, 0, 0), glm.vec3(0, -90, 0)),
+    Side.North: NMM(glm.vec3(0, 0, -1.0), glm.vec3(0, 180, 0)),
+    Side.Top: NMM(glm.vec3(0, 1.0, 0), glm.vec3(90, 0, 0)),
+    Side.Bottom: NMM(glm.vec3(0, -1.0, 0), glm.vec3(-90, 0, 0)),
+}
+
+BLOCK_NULL_INSTANCE: np.ndarray[int] = np.array([
+    [i, FaceTexID.Null, FaceSizeID.Full] for i in range(6)
+]).flatten()
+
+
 @dataclass
 class Block(MCPhys, aabb=BLOCK_BASE_AABB):
-    data: BlockData = AIR_BLOCK_DATA
-    _visible_faces: int = 0
-    _visible_cache: int = 0
-    _visible_cache_valid: bool = False
+    data: Union[int, BlockData] = AIR_BLOCK_DATA
 
     chunk: Optional[Chunk] = None
 
+    _id: uuid.UUID = field(init=False)  # Set to init=False to not include it in the generated __init__
+
+    # Define equality based on the tuple
+    def __eq__(self, other):
+        if isinstance(other, MCPhys):
+            return self._id == other._id
+        return False
+
+    # Define hash based on the tuple
+    def __hash__(self):
+        return hash(self._id)
+
     def __post_init__(self):
         super().__post_init__()
+        self._visible_bitmask: int = 63
+        self._visible_list: List[bool] = [False] * 6
+        self._num_visible_cache: int = 0
+        self._visible_cache_valid: bool = False
+
+        self._face_model_mats: Dict[Side, glm.mat4] = {}
+        self.initialized: bool = False
+        self._awaiting_update: bool = False
+
+        self.face_instances: List[int] = copy(BLOCK_NULL_INSTANCE)
 
     def initialize(self, chunk: Optional[Chunk] = None):
         if chunk:
@@ -166,8 +217,23 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             self.chunk = chunk
         self.pos += self.chunk.pos
 
-    def neighbour(self, side: Union[int, Side], blocks: List[Block]):
-        return
+        self.enqueue_update()
+        self.initialized = True
+
+    def enqueue_update(self):
+        if self._awaiting_update:
+            raise RuntimeError("Attempted to put block into update queue whilst already awaiting an update")
+        self._awaiting_update = True
+        self.chunk.enqueue_block(self)
+
+    def stack_update(self):
+        if self._awaiting_update:
+            raise RuntimeError("Attempted to put block into update queue whilst already awaiting an update")
+        self._awaiting_update = True
+        self.chunk.stack_block(self)
+
+    def neighbour(self, side: Union[int, Side]) -> Optional[Block]:
+        return self.chunk.get_block(self.pos + _neighbour_offset[side])
 
     def set(self, block_data: Union[int, BlockID, BlockData]):
         if isinstance(block_data, int):
@@ -178,12 +244,65 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             block_data = _block_data_cache[block_data]
         was_solid = self.is_solid
         was_opaque = self.is_opaque
+
         self.data = block_data
+        for i in range(6):
+            self.face_instances[3 * i + 1] = self.data.face_textures[i]
+
         if was_solid and not self.is_solid:
             pass
 
-    def update_face_visibility(self):
-        pass
+        if self.initialized:
+            self.enqueue_update()
+
+    def update(self):
+        if not self._awaiting_update:
+            return  # Shouldn't be possible
+        for side in range(6):
+            neighbour = self.neighbour(side)
+            if neighbour is None:
+                self._face_is_visible(side)
+            else:
+                if not neighbour.is_opaque:
+                    self._face_is_visible(side)
+                else:
+                    self._face_is_not_visible(side)
+                if not neighbour._awaiting_update:
+                    neighbour.stack_update()
+        self._awaiting_update = False
+
+    def _is_face_visible(self, face: int):
+        return self._visible_bitmask & _FACE_MASKS[face]
+
+    def _face_is_visible(self, face: int):
+        if not self._is_face_visible(face):  # Check if Face was not visible
+            self._visible_bitmask |= _FACE_MASKS[face]
+            self._visible_cache_valid = False
+
+    def _face_is_not_visible(self, face: int):
+        if self._is_face_visible(face):  # Check if Face was visible
+            self._visible_bitmask &= ~_FACE_MASKS[face]
+            self._visible_cache_valid = False
+
+    def _validate_visible_cache(self):
+        if self._visible_cache_valid:
+            return
+        self._num_visible_cache = len(self._visible_list)
+        self._visible_cache_valid = True
+
+    @property
+    def visible_faces(self):
+        self._validate_visible_cache()
+        return self._visible_list
+
+    @property
+    def num_visible_faces(self):
+        self._validate_visible_cache()
+        return self._num_visible_cache
+
+    def is_face_visible(self, face: int):
+        self._validate_visible_cache()
+        return self._is_face_visible(face)
 
     @property
     def block_id(self) -> BlockID:
@@ -192,10 +311,6 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
     @property
     def name(self) -> str:
         return self.data.name
-
-    @property
-    def value(self) -> int:
-        return self.data.value
 
     @property
     def is_air(self) -> bool:
@@ -211,84 +326,46 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
 
     @property
     def is_renderable(self) -> bool:
-        return self._visible_faces != 0
-
-    @property
-    def visible_faces(self) -> int:
-        if self.is_air:
-            return 0
-        if not self._visible_cache_valid:
-            self._visible_cache = bin(self._visible_faces).count("1")
-        return self._visible_cache
-
-    def is_side_visible(self, side: Union[int, Side]):
-        if isinstance(side, int):
-            side: Side = _side_cache[side]
-        return (self._visible_faces & (1 << side.value)) != 0
+        return self.num_visible_faces != 0
 
     def hide_face(self, side: Union[int, Side]):
-        if isinstance(side, int):
+        if isinstance(side, Side):
             side = _side_cache[side]
-        if self.is_side_visible(side):
-            self._visible_faces &= ~(1 << side.value)
-            self._visible_cache -= 1
+        self._face_is_not_visible(side)
 
     def reveal_face(self, side: Union[int, Side]):
-        if isinstance(side, int):
+        if isinstance(side, Side):
             side = _side_cache[side]
-        if not self.is_side_visible(side):
-            self._visible_faces |= (1 << side.value)
-            self._visible_cache += 1
-
-    def get_face_instances(self) -> bytes:
-        face_bytes: bytes = b""
-        for side in range(6):
-            if self.is_side_visible(side):
-                face_bytes += (
-                        struct.pack("B", side) +
-                        struct.pack("H", self.data.face_textures_as_shorts[side])
-                )
-            else:
-                face_bytes += (
-                        struct.pack("B", -1) +
-                        struct.pack("H", 0)
-                )
-
-    def serialize(self) -> Tuple[bytes, bytes]:  # (position, block_state)
-        return struct.pack("fff", self.pos.x, self.pos.y, self.pos.z), self.data.serialize()
-
-    @classmethod
-    def deserialize(cls, block_in_section_id: int, packed_data: Tuple[bytes, bytes], section: Section) -> Block:
-        # Unpack the serialized data
-        return cls(
-            id=block_in_section_id,
-            _aabb=AABB.from_pos_size(glm.vec3(struct.unpack("fff", packed_data[0]))),
-            data=BlockState.deserialize(packed_data[1]),
-            section=section
-        )
-
-    @staticmethod
-    def serialize_array(blocks: List[Block]) -> Tuple[bytes, bytes]:  # (block_positions, block_states)
-        block_position_bytes = b""
-        block_state_bytes = b""
-        for block in blocks:
-            block_position_bytes += struct.pack("fff", block.pos.x, block.pos.y, block.pos.z)
-            block_state_bytes += block.data.serialize()
-        return block_position_bytes, block_state_bytes
-
-    @staticmethod
-    def deserialize_array(ids: List[int], packed_data: Tuple[bytes, bytes], section: Section) -> Tuple[
-        List[Block], List[BlockData]]:
-        blocks = []
-        block_states = []
-        for i in range(len(ids)):
-            block = Block.deserialize(ids[i], packed_data[i], section)
-            blocks.append(block)
-            block_states.append(block.data)
-        return blocks, block_states
+        self._face_is_visible(side)
 
     def to_nbt(self) -> nbtlib.Compound:
         return self.data.to_nbt()
+
+    @classmethod
+    def from_nbt(cls, block_in_chunk_index: int, nbt_data: nbtlib.Compound):
+        block_data = _block_data_cache[
+            _block_id_cache[int(nbt_data["BlockID"])]]  # Get Base BlockData from BlockID Enum
+        # TODO: obtain saved block states from nbt compound tag
+        return Block(block_in_chunk_index, block_data)  # Create Block Object
+
+
+class BlockShape(TexQuad):
+    def __init__(self, block_data: np.ndarray, face_data: np.ndarray):
+        self._inst_face_data: np.ndarray = face_data
+        super().__init__(model_mats=block_data)
+
+    def list_inst_attrs(self) -> List[VA._Base]:
+        return [
+            VA.Float.Mat4("a_Model", divisor=6),
+            VA.Int.Scalar("a_FaceID", divisor=1),
+            VA.Int.Scalar("a_TexPosID", divisor=1),
+            VA.Int.Scalar("a_TexSizeID", divisor=1),
+        ]
+
+    def get_instance_data_lists(self) -> List[np.ndarray]:
+        return super().get_instance_data_lists() + [
+            self._inst_face_data
+        ]
 
 
 if __name__ == "__main__":

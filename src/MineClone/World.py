@@ -1,24 +1,15 @@
 from __future__ import annotations
-from multiprocessing import Pool
 
-import threading
 import pstats
 
 import os.path
 import pickle
 
+import glm
 import nbtlib
 import numpy as np
 
 from Region import *
-
-WORLD_REGION_WIDTH: int = 3
-
-if WORLD_REGION_WIDTH % 3:
-    raise RuntimeError(f"World Region Width: {WORLD_REGION_WIDTH} is not acceptable."
-                       f" It must be a multiple of 3")
-WORLD_REGION_WIDTH_HALF: int = WORLD_REGION_WIDTH // 2
-_WORLD_REGION_WIDTH_ID_RANGE: range = range(-WORLD_REGION_WIDTH_HALF, WORLD_REGION_WIDTH_HALF + 1)
 
 WORLD_REGION_EXTENTS: glm.vec3 = glm.vec3(WORLD_REGION_WIDTH, 1, WORLD_REGION_WIDTH)
 WORLD_NUM_REGIONS: int = int(np.prod(WORLD_REGION_EXTENTS))
@@ -37,7 +28,6 @@ WORLD_NUM_BLOCKS: int = WORLD_NUM_CHUNKS * CHUNK_NUM_BLOCKS
 WORLD_AABB: AABB = AABB.from_pos_size(size=WORLD_BLOCK_EXTENTS)
 
 WORLD_SPAWN_CHUNK_WIDTH = 19
-WORLD_SPAWN_CHUNK_WIDTH = 19
 WORLD_NUM_SPAWN_CHUNKS = WORLD_SPAWN_CHUNK_WIDTH ** 2
 
 if not (WORLD_REGION_WIDTH % 2):
@@ -47,79 +37,34 @@ WORLD_SPAWN_CHUNK_WIDTH_HALF = WORLD_SPAWN_CHUNK_WIDTH // 2
 WORLD_SPAWN_CHUNK_RANGE: range = range(-WORLD_SPAWN_CHUNK_WIDTH_HALF, WORLD_SPAWN_CHUNK_WIDTH_HALF + 1)
 WORLD_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS: Tuple[int] = tuple(a * CHUNK_BLOCK_WIDTH for a in WORLD_SPAWN_CHUNK_RANGE)
 
-WORLD_SPAWN_CHUNK_POSITIONS: Tuple[glm.vec3] = tuple(
+INITIAL_SPAWN_CHUNK_WIDTH = 3
+INITIAL_NUM_SPAWN_CHUNKS = INITIAL_SPAWN_CHUNK_WIDTH ** 2
+
+INITIAL_SPAWN_CHUNK_WIDTH_HALF = INITIAL_SPAWN_CHUNK_WIDTH // 2
+INITIAL_SPAWN_CHUNK_RANGE: Tuple[glm.vec3] = range(-INITIAL_SPAWN_CHUNK_WIDTH_HALF, INITIAL_SPAWN_CHUNK_WIDTH_HALF + 1)
+INITIAL_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS: Tuple[int] = tuple(a * CHUNK_BLOCK_WIDTH for a in INITIAL_SPAWN_CHUNK_RANGE)
+
+INITIAL_SPAWN_CHUNK_POSITIONS: Tuple[glm.vec3] = tuple(
     glm.vec3(x, 0, z)
-    for x in WORLD_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS
-    for z in WORLD_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS
+    for x in INITIAL_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS
+    for z in INITIAL_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS
 )
 
-
-######### Coordinate - Coordinate Translation #########
-# World Region Coords to World Coords
-def wr_coords_to_w_coords(wr_coords: glm.vec2) -> glm.vec3:
-    return glm.vec3(wr_coords[0], 1, wr_coords[1]) * REGION_BLOCK_EXTENTS // 2
-
-
-# def wr_coords_to_w_coords(wr_coords: glm.vec2) -> glm.vec3:
-#    return glm.vec3(wr_coords[0] * REGION_BLOCK_WIDTH, 1, wr_coords[1] * REGION_BLOCK_WIDTH)
-
-
-# World Coords to World Region Coords
-# def w_coords_to_wr_coords(w_coords: glm.vec3) -> glm.vec2:
-#    return (w_coords.xz + WORLD_BLOCK_WIDTH_HALF) // REGION_BLOCK_WIDTH
-
-def w_coords_to_wr_coords(w_coords: glm.vec3) -> glm.vec2:
-    return glm.vec2(
-        int(w_coords.x / (REGION_BLOCK_EXTENTS.x / 2)),
-        int(w_coords.z / (REGION_BLOCK_EXTENTS.z / 2)),
-    )  # Drops the decimal part
-
-
-# World Coords to Region Chunk Coords
-# def w_coords_to_rc_coords(w_coords: glm.vec3) -> glm.vec2:
-#    return (w_coords.xz + WORLD_BLOCK_WIDTH_HALF) // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH
-
-def w_coords_to_rc_coords(w_coords: glm.vec3) -> glm.vec2:
-    return glm.vec2(w_coords.x // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH,
-                    w_coords.z // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH)
-
-
-######################################################
-
-######### Coordinate - ID Translation #########
-# World Region Coords to World Region ID
-def wr_coords_to_wrid(wr_coords: glm.vec2) -> int:
-    return int(wr_coords[0] + wr_coords[1] * WORLD_REGION_WIDTH)
-
-
-def wr_coords_to_wrid(wr_coords: glm.vec2) -> int:
-    # Assuming WORLD_REGION_WIDTH_HALF is defined as half the width of your region grid
-    return int((wr_coords[0] + WORLD_REGION_WIDTH_HALF) +
-               (wr_coords[1] + WORLD_REGION_WIDTH_HALF) * WORLD_REGION_WIDTH)
-
-
-# World Coords to World Region ID
-def w_coords_to_wrid(w_coords: glm.vec3) -> int:
-    return wr_coords_to_wrid(
-        w_coords_to_wr_coords(w_coords)
+WORLD_SPAWN_CHUNK_POSITIONS: Tuple[glm.vec3] = tuple(
+    sorted(
+        tuple(
+            filter(
+                lambda x: x not in INITIAL_SPAWN_CHUNK_POSITIONS,
+                [
+                    glm.vec3(x, 0, z)
+                    for x in WORLD_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS
+                    for z in WORLD_SPAWN_CHUNK_BLOCK_WIDTH_OFFSETS
+                ]
+            )
+        ),
+        key=lambda pos: glm.length(pos)  # Sort by distance from origin
     )
-
-
-###############################################
-
-######### ID - Coordinate Translation #########
-# World Region ID to World Region Coords
-def wrid_to_wr_coords(wrid: int) -> glm.vec2:
-    x = wrid % WORLD_REGION_WIDTH  # Get x coordinate
-    z = wrid // WORLD_REGION_WIDTH  # Get z coordinate
-    return glm.vec2(x, z)  # Return as glm.vec2 object
-
-
-###############################################
-
-do_profile = True
-
-PROCESS_POOL_SIZE = max(1, os.cpu_count() - 1)
+)
 
 gen_options_buffet = nbtlib.Compound({
     "biome_source": nbtlib.Compound({
@@ -158,34 +103,7 @@ gen_options_superflat = nbtlib.Compound({
     "flat_world_options": nbtlib.String(""),  # The unescaped "generator-settings" string.
 })
 
-_world: Optional[World] = None
-
-
-def init_gen_chunk_worker(world):
-    global _world
-    _world = world
-
-
-def gen_chunk(w_coords: glm.vec3) -> Tuple[int, int, Chunk]:
-    """
-    Initializes a chunk at the given world coordinates.
-    This method is run in parallel by the Pool workers.
-    """
-    if do_profile:
-        profiler = cProfile.Profile()
-        profiler.enable()
-
-    region = _world.get_region_from_w_coords(w_coords)
-    rc_coords = w_coords_to_rc_coords(w_coords)
-    region.init_chunk_from_rc_coords(rc_coords)
-    chunk: Chunk = region.get_chunk_from_rc_coords(rc_coords)
-
-    if do_profile:
-        profiler.disable()
-        profiler.dump_stats(f'thread_{threading.get_ident()}.prof')
-
-    # print(f"Chunk at {w_coords} Initialized!")
-    return (region.index, chunk.serialize(True))
+_REGION_MASKS = tuple(1 << i for i in _WORLD_REGION_ID_RANGE)
 
 
 @dataclass
@@ -201,13 +119,6 @@ class World(MCPhys, aabb=WORLD_AABB):
         self.file_path = f"{self.file_location}\\{self.world_name}"
         del self.file_location
 
-        self.octree = Octree(self.bounds, REGION_BLOCK_EXTENTS)
-        self._solid_dict: Dict[int, Region] = {}
-        self._solid_bitmask: int = 0
-        self._solid_list_cache: List[Region] = []
-        self._num_solid_cache: int = 0
-        self._solid_cache_valid: bool = False
-
         self._renderable_dict: Dict[int, Region] = {}
         self._renderable_bitmask: int = 0
         self._renderable_list_cache: List[Region] = []
@@ -215,32 +126,55 @@ class World(MCPhys, aabb=WORLD_AABB):
         self._renderable_cache_valid: bool = False
 
         self.regions = copy(WORLD_REGION_NONE_LIST)
-        if not self._from_file:
+
+        self._update_deque: deque[Region] = deque()
+
+        if self._from_file:
+            for region_file in os.listdir(f"{self.file_path}\\region"):
+                wr_coords = glm.vec2(tuple(int(i) for i in region_file.split("r.")[1].split(".mcr")[0].split(".")))
+                wrid = wr_coords_to_wrid(wr_coords)
+                self.region_from_file(wrid)
+        else:
             # Initialise Spawn Region
             self.init_region()
-
-            print(f"Initializing {WORLD_NUM_SPAWN_CHUNKS} spawn chunks...")
-            chunk_batch_size = max(1, len(WORLD_SPAWN_CHUNK_POSITIONS) // PROCESS_POOL_SIZE)  # Avoid batch size of zero
-            results = []
-            starts = list(range(0, len(WORLD_SPAWN_CHUNK_POSITIONS), chunk_batch_size))
-            batches = [WORLD_SPAWN_CHUNK_POSITIONS[chunk_batch_start:chunk_batch_start + chunk_batch_size] for
-                       chunk_batch_start in starts]
-            with Pool(processes=PROCESS_POOL_SIZE, initializer=init_gen_chunk_worker, initargs=(self,)) as pool:
-                # Use imap_unordered for better performance
-                [results.extend(pool.imap_unordered(gen_chunk, batch)) for batch in batches]
-
-            # Process results outside of the pool to avoid blocking
-            for i, (wrid, chunk_data) in enumerate(results):
-                # Calculate chunk_num carefully to avoid out-of-bounds
-                chunk_num = starts[i // chunk_batch_size] + (i % chunk_batch_size)
-                # Deserialize and store the chunk
-                chunk = Chunk.deserialize(chunk_data, 2)
-                self.regions[wrid].chunks[chunk.index] = chunk
-                print(f"Chunk {chunk_num + 1}/{len(WORLD_SPAWN_CHUNK_POSITIONS)} Initialized and Set in Main Thread!")
-
-            print("Spawn chunk initialization complete.")
-            print(f"{len(list(filter(lambda x: x is not None, self.regions[4].chunks)))} Chunks Seen In Main Thread!")
+            print(f"Generating {INITIAL_NUM_SPAWN_CHUNKS} Initial spawn chunks...")
+            cnt = 1
+            for i, w_coords in enumerate(INITIAL_SPAWN_CHUNK_POSITIONS):
+                self.generate_chunk(w_coords)
+                print(f"{cnt}/{INITIAL_NUM_SPAWN_CHUNKS} Initial Spawn Chunks Generated")
+                cnt += 1
+            self.update()
             self.to_file()
+
+    def enqueue_region(self, region: Region):
+        self._update_deque.append(region)
+
+    def stack_region(self, region: Region):
+        self._update_deque.appendleft(region)
+
+    def update(self):
+        while self._update_deque:
+            region = self._update_deque.popleft()
+            region.update()
+            self.update_region_in_lists(region)
+
+    def generate_chunk(self, wrid: Union[int, glm.vec3], rcid: Optional[Union[int, glm.vec3]] = None) -> Chunk:
+        if isinstance(wrid, int):
+            if rcid is None:
+                raise ValueError(f"wrid of {wrid} provided without an rcid value!")
+            elif isinstance(rcid, glm.vec3):
+                rcid: int = rc_coords_to_rcid(rcid)
+        elif isinstance(wrid, glm.vec3):
+            if rcid is None:
+                rcid: int = w_coords_to_rcid(wrid)
+            wrid: int = w_coords_to_wrid(wrid)
+        else:
+            raise TypeError("wrid provided as invalid type")
+        region = self.get_region(wrid)
+        region.init_chunk(rcid)
+
+    def _get_region_id(self, x: int, z: int) -> int:
+        return (z * WORLD_REGION_WIDTH) + x
 
     def init_region(self, wr_coords: Optional[glm.vec2] = None):
         if wr_coords is None:
@@ -258,6 +192,8 @@ class World(MCPhys, aabb=WORLD_AABB):
     def set_region(self, region_index: int, region: Region):
         self._is_index_out_of_bounds(region_index)
         self.regions[region_index] = region
+        if not region._awaiting_update:
+            self.enqueue_region(region)
 
     def set_region_from_w_coords(self, w_coords: glm.vec3, region: Region):
         try:
@@ -265,8 +201,8 @@ class World(MCPhys, aabb=WORLD_AABB):
         except ValueError:
             raise ValueError(f"World Region Coords: {w_coords} are out of bounds")
 
-    def get_region(self, region_index: int) -> Region:
-        self._is_index_out_of_bounds(region_index)
+    def get_region(self, region_index: int) -> Optional[Region]:
+        # self._is_index_out_of_bounds(region_index)
         return self.regions[region_index]
 
     def get_region_from_w_coords(self, w_coords: glm.vec3) -> Region:
@@ -279,7 +215,70 @@ class World(MCPhys, aabb=WORLD_AABB):
         World.save_region_to_file(region, self.file_path)
 
     def region_from_file(self, wrid: int) -> Region:
-        World.load_region_from_file(wrid, self.file_path)
+        region = World.load_region_from_file(wrid, self.file_path)
+        region.initialize(wrid_to_w_coords(wrid), self)
+        self.update_region_in_lists(region)
+        self.regions[wrid] = region
+
+    def _is_region_renderable(self, region: Region):
+        return self._renderable_bitmask & _REGION_MASKS[region.index]
+
+    def _region_is_renderable(self, region: Region):
+        if not self._is_region_renderable(region):  # Check if Chunk was not renderable
+            self._renderable_dict[region.index] = region
+            self._renderable_bitmask |= _REGION_MASKS[region.index]
+            self._renderable_cache_valid = False
+
+    def _region_is_not_renderable(self, region: Region):
+        if self._is_region_renderable(region):  # Check if Chunk was renderable
+            self._renderable_dict.pop(region.index)
+            self._renderable_bitmask &= ~_REGION_MASKS[region.index]
+            self._renderable_cache_valid = False
+
+    def update_region_in_lists(self, region: Region):
+        if region.is_renderable:
+            self._region_is_renderable(region)
+        else:
+            self._region_is_not_renderable(region)
+
+    def _validate_renderable_cache(self):
+        self._renderable_list_cache = self._renderable_dict.values()
+        self._num_renderable_cache = len(self._renderable_list_cache)
+        self._renderable_cache_valid = True
+
+    @property
+    def renderable_regions(self):
+        if not self._renderable_cache_valid:
+            self._validate_renderable_cache()
+        return self._renderable_list_cache
+
+    @property
+    def num_renderable_regions(self):
+        if not self._renderable_cache_valid:
+            self._validate_renderable_cache()
+        return self._num_renderable_cache
+
+    @property
+    def is_renderable(self) -> bool:
+        return bool(self._num_renderable_cache)
+
+    @property
+    def spawn_region(self) -> Region:
+        return self.regions[(len(self.regions) - 1) // 2]
+
+    @property
+    def spawn_chunks(self) -> Tuple[Chunk]:
+        return self.spawn_region.non_none_chunks
+
+    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
+        if self.bounds.intersectPoint(block_pos):
+            local_pos = [int(i) for i in block_pos.xz - self.pos]
+            region = self.get_region(self._get_region_id(*local_pos))
+            if region is None:
+                return None
+            return region.get_block(block_pos)
+        else:
+            return None
 
     @staticmethod
     def create_world_directory(world_file_path: str, ):
@@ -403,65 +402,59 @@ class World(MCPhys, aabb=WORLD_AABB):
                 self.region_to_file(region)  # Write all notnull Regions to files
 
     @classmethod
-    def from_file(cls, world_file_path):
+    def from_file(cls, world_file_path: str = os.getcwd() + "\\world\\"):
         with open(f"{world_file_path}\\level.dat", "rb") as f:
             level_compound = nbtlib.File.parse(f)
         player = Player()  # TODO: something to do with Player from level_compound
-        world = cls(
+        split_subs = world_file_path.split("\\")
+        return World(
             player=player,
-            world_name=world_file_path.split("\\")[-1],
+            world_name=split_subs[-2] if world_file_path[-1:] == "\\" else split_subs[-1],
             _from_file=True
         )
-        for region_file in os.listdir(f"{world_file_path}\\region"):
-            wr_coords = glm.vec2(tuple(int(i) for i in region_file.split("r.")[1].split(".mcr")[0].split(".")))
-            wrid = wr_coords_to_wrid(wr_coords)
-            world.region_from_file(wrid)
 
-
-def combine_profiles(output_file: str, *input_files: str):
-    combined_stats = pstats.Stats()
-
-    for input_file in input_files:
-        if os.path.exists(input_file):
-            # Load each .prof file
-            stats = pstats.Stats(input_file)
-            combined_stats.add(stats)
-            os.remove(input_file)  # Remove the input file after processing
-
-    # Save the combined stats to a new .prof file
-    combined_stats.dump_stats(output_file)
-    print(f"Combined profile saved to {output_file}")
-
-
-World.from_file(os.getcwd() + "\\world")
-quit()
+    def get_shape(self):
+        return BlockShape(self._block_instances, self._face_instances)
+        #mesh = ShapeMesh(bs)
+do_profile = True
+load_from_file = False
 if __name__ == "__main__":
     def profile_test():
-        a = World(0)
-        # r = World.load_region_from_file(4)
+        if load_from_file:
+            world = World.from_file()
+        else:
+            world = World(0)
+        return world
 
 
     def test():
-        a = World(0)
+        world = profile_test()
+
+        # spawn_region: Region = world.regions[4]
+        # solid_blocks_in_spawn_chunks = list(
+        #    filter(
+        #        lambda x: x is not None,
+        #        [
+        #            f"{chunk.index}: {chunk.num_solid_blocks}" if chunk is not None else None
+        #            for chunk in spawn_region.chunks
+        #        ]
+        #    )
+        # )
+        # print(solid_blocks_in_spawn_chunks)
 
 
     if do_profile:
         # Run the main profiling function
-        cProfile.run("profile_test()", "main.prof")
+        profiler = cProfile.Profile()
+        profiler.enable()
+        profile_test()  # your main function to profile
+        profiler.disable()
 
-        # Set the output file for combined profiles
-        output_file = "world.prof"
+        # Create a Stats object
+        stats = pstats.Stats(profiler)
+        stats.sort_stats('cumulative')  # or 'time', 'calls', etc.
+        stats.dump_stats("world.prof")  # Print the profiling results
 
-        # Initialize the list of input files with the main profile
-        input_files = ["main.prof"]
-
-        # Gather all thread profile files in the current directory
-        for f in os.listdir(os.getcwd()):
-            if "thread_" in f:
-                input_files.append(f)  # Append individual thread profile files
-
-        # Combine all profile files
-        combine_profiles(output_file, *input_files)
     else:
         num_tests = 1
         test_time = timeit("test()", globals=globals(), number=num_tests)

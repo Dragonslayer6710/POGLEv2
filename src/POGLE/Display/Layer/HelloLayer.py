@@ -2,7 +2,6 @@ import random
 
 from POGLE.Core.Application import *
 from MineClone.Game import *
-from MineClone.World import _WORLD_CHUNK_AXIS_LENGTH
 game: Game = None
 class HelloLayer(Layer):
     def __init__(self, renderer: Renderer):
@@ -58,33 +57,6 @@ class HelloLayer(Layer):
                 Color.CYAN,
                 Color.WHITE
             ]
-            testQCs = ColQC(
-                [
-                    ColQC.Instance(
-                        NMM(
-                            glm.vec3(
-                                random.randrange(-50, 50),
-                                random.randrange(-50, 50),
-                                random.randrange(-50, 50)
-                            )
-                        ),
-                        [colors[random.randrange(0, len(colors) - 1)] for i in range(6)],
-                        [random.randrange(50, 100) / 100 for i in range(6)]
-                    ) for i in range(0, random.randrange(0, 1000)+1)
-                ]
-            )
-            testQC = ColQC(
-                NMM(glm.vec3(0.0, 0.0, -5.0)),
-                [
-                    Color.RED,
-                    Color.GREEN,
-                    Color.BLUE,
-                    Color.YELLOW,
-                    Color.CYAN,
-                    Color.MAGENTA
-                ],
-                1.0
-            )
 
             #testBlock = Block(NMM(glm.vec3(0,0,-5)))
             #testBlock.visibleSides[Block.Side.Top] = False
@@ -97,7 +69,7 @@ class HelloLayer(Layer):
             #self.testBlockShader.use()
 
             self.renderDistance = game.worldRenderer._render_distance
-            self.maxRenderDistance = _WORLD_CHUNK_AXIS_LENGTH
+            self.maxRenderDistance = 1#_WORLD_CHUNK_AXIS_LENGTH
             self.minRenderDistance = 1
             self.renderDistanceRangeSize = self.maxRenderDistance - self.minRenderDistance + 1
             #self.testWorldRenderer._set_render_distance(self.renderDistance)

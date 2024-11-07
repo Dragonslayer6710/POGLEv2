@@ -4,6 +4,9 @@ import random
 import numpy as np
 
 from MineClone.Player import *
+from POGLE.Geometry.Shape import QuadCube
+from POGLE.Shader import UniformBuffer, UniformBlock
+
 
 class Game:
     def __init__(self):

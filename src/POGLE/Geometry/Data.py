@@ -1,6 +1,11 @@
+from OpenGL.GL import *
+import glfw
+import numpy as np
 import ctypes
-
-from POGLE.Core.Core import *
+from ctypes import c_float, c_double, c_uint, c_short, c_ushort
+import glm
+from dataclasses import dataclass
+from typing import List, Collection, Union, Any, Tuple, Dict
 
 
 def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1)) -> glm.mat4:
@@ -22,421 +27,368 @@ def NewModelMatrix(translation: glm.vec3 = glm.vec3(),
 
     return model_matrix
 
-class Vector:
-    __create_key = object()
 
-    def __init__(self, create_key, vector_type, initial_capacity=10):
-        if create_key != Vector.__create_key:
-            raise ValueError("Vector objects must be created using Vector._new")
-        """
-        Initialize the Vector with a given structure class and initial capacity.
+class Buffer:
+    _bound_buffers: dict = {}
 
-        :param vector_type: The ctypes.Structure class that the vector will manage.
-        :param initial_capacity: Initial capacity of the vector.
-        """
-        self._vector_type = vector_type
-        self._initialize(initial_capacity)
-
-    @classmethod
-    def _new(cls, vector_type, initial_capacity=10):
-        return cls(cls.__create_key, vector_type, initial_capacity)
-
-    @classmethod
-    def Struct(cls, initial_capacity=10):
-        return cls._new(ctypes.Structure, initial_capacity)
-
-    @classmethod
-    def from_iterable(cls, vector_type, iterable):
-        """
-        Create a Vector from an iterable of elements.
-
-        :param vector_type: The ctypes.Structure class that the vector will manage.
-        :param iterable: An iterable of elements to initialize the vector with.
-        """
-        instance = cls._new(vector_type, len(iterable))
-        for element in iterable:
-            instance.push(element)
-        return instance
-
-    def _initialize(self, capacity):
-        """
-        Initialize or reinitialize the vector with a given capacity.
-        """
-        self.capacity = capacity
+    def __init__(self, target, usage, dtype: np.dtype = np.float32):
+        self.target = target
+        self.usage = usage
+        self.ID = glGenBuffers(1)
+        if self.ID == 0:
+            raise RuntimeError("Failed to generate buffer ID.")
         self.size = 0
-        # Allocate memory for the array of vector_type instances
-        self.data = (self._vector_type * capacity)()
+        self._cleaned = False  # Flag to track if cleanup has been done
+        if dtype is not None:
+            self.dtype = dtype
 
-    def push(self, vector_element):
-        """
-        Add an element to the end of the vector, resizing if necessary.
-        """
-        if not isinstance(vector_element, self._vector_type):
-            raise TypeError("Vector Element Is Of Wrong Type")
-        if self.size >= self.capacity:
-            self._resize(self.capacity * 2)
-        self.data[self.size] = vector_element
-        self.size += 1
+    @staticmethod
+    def getBoundBuffer(target):
+        return Buffer._bound_buffers.get(target) or 0
 
-    def pop(self):
-        """
-        Remove and return the last structure instance in the vector.
-        """
-        if self.size == 0:
-            raise IndexError("Pop from empty vector")
-        self.size -= 1
-        return self.data[self.size]
+    @staticmethod
+    def isBufferBound(target, bufferID):
+        return Buffer.getBoundBuffer(target) == bufferID
 
-    def _resize(self, new_capacity):
-        """
-        Resize the vector to a new capacity.
-        """
-        new_data = (self._vector_type * new_capacity)()
-        for i in range(self.size):
-            new_data[i] = self.data[i]
-        self.data = new_data
-        self.capacity = new_capacity
-
-    def __getitem__(self, index):
-        if index < 0 or index >= self.size:
-            raise IndexError("Index out of range")
-        return self.data[index]
-
-    def __len__(self):
-        return self.size
+    @staticmethod
+    def recBoundBuffer(target, bufferID):
+        Buffer._bound_buffers[target] = bufferID
 
     @property
-    def bytes(self) -> int:
-        return self.size * c_sizeof(self._vector_type)
+    def bound(self):
+        return Buffer.isBufferBound(self.target, self.ID)
 
-    def data_pointer(self):
-        """
-        Get a ctypes pointer to the underlying data.
-        """
-        return ctypes.cast(self.data, ctypes.POINTER(self._vector_type))
+    def recBind(self, clear=False):
+        bufferID = 0 if clear else self.ID
+        Buffer.recBoundBuffer(self.target, bufferID)
 
-    def __iter__(self):
-        """
-        Return an iterator for the vector.
-        """
-        self._iter_index = 0
-        return self
+    def bind(self):
+        if self._cleaned:
+            raise RuntimeError("Cannot bind a cleaned up buffer.")
+        if not self.bound:
+            glBindBuffer(self.target, self.ID)
+            self.recBind()
 
-    def __next__(self):
-        """
-        Return the next element in the iteration.
-        """
-        if self._iter_index >= self.size:
-            raise StopIteration
-        result = self.data[self._iter_index]
-        self._iter_index += 1
-        return result
+    def unbind(self):
+        if self._cleaned:
+            raise RuntimeError("Cannot unbind a cleaned up buffer.")
+        if self.bound:
+            glBindBuffer(self.target, 0)
+            self.recBind(True)
 
-    def reserve(self, new_capacity):
-        """
-        Reserve space for at least new_capacity elements.
-        """
-        if new_capacity > self.capacity:
-            self._resize(new_capacity)
+    def buffer_data(self, data: Union[np.ndarray, bytes]):
+        if isinstance(data, np.ndarray):
+            data = data.tobytes()
+        elif not isinstance(data, bytes):
+            raise TypeError("Buffer can only receive an np array or bytes object when buffering data")
+        if self._cleaned:
+            raise RuntimeError("Cannot buffer data to a cleaned up buffer.")
+        if not self.bound:
+            raise RuntimeError("Cannot buffer data to an unbound buffer")
+        self.size = len(data)
+        glBufferData(self.target, self.size, data, self.usage)
 
-    def clear(self):
-        """
-        Clear all elements in the vector.
-        """
-        self.size = 0
+    def buffer_sub_data(self, offset, data: bytes):
+        if self._cleaned:
+            raise RuntimeError("Cannot buffer sub-data to a cleaned up buffer.")
+        if not self.bound:
+            raise RuntimeError("Cannot buffer sub-data to an unbound buffer")
+        glBufferSubData(self.target, offset, len(data), data)
 
-class Data:
-    from ctypes import c_bool, c_ubyte, c_byte, c_ushort, c_short, c_uint32, c_int32, c_float, c_double
+    def allocate(self, size):
+        if self._cleaned:
+            raise RuntimeError("Cannot allocate a cleaned up buffer.")
+        if not self.bound:
+            raise RuntimeError("Cannot allocate an unbound buffer")
+        self.size = size
+        glBufferData(self.target, self.size, None, self.usage)
 
-    _typeDict = {
-        GL_BOOL: c_bool,
-        GL_UNSIGNED_BYTE: c_ubyte,
-        GL_BYTE: c_byte,
-        GL_UNSIGNED_SHORT: c_ushort,
-        GL_SHORT: c_short,
-        GL_UNSIGNED_INT: c_uint32,
-        GL_INT: c_int32,
-        GL_FLOAT: c_float,
-        GL_DOUBLE: c_double
-    }
-    class Attribute:
-        class _MetaClass(type):
-            T = TypeVar("T")
-            def __getitem__(cls, key: Type[T]) -> Type['NewClass']:
-                # Define a new class with the 'gl_type' attribute set to the key
-                class NewClass(cls, Generic[cls.T]):
-                    gl_type = key
+    def get_data(self, offset=0, size=None):
+        current_buffer = self._bound_buffers[self.target]
+        if current_buffer != self.ID:
+            self.bind()
+        if self._cleaned:
+            raise RuntimeError("Cannot read a cleaned up buffer.")
+        if not self.bound:
+            raise RuntimeError("Cannot read an unbound buffer")
 
-                    def __init__(self, *args, **kwargs):
-                        super().__init__(*args, **kwargs)
+        # Get buffer size if not specified
+        if size is None:
+            buffer_size = glGetBufferParameteriv(self.target, GL_BUFFER_SIZE)
+        else:
+            buffer_size = size
 
-                return NewClass
+        # Read the data from the buffer
+        data = glGetBufferSubData(self.target, offset, buffer_size)
+        if current_buffer != self.ID:
+            self.unbind()
+            glBindBuffer(self.target, current_buffer)
 
-        class _Base(metaclass=_MetaClass):
-            __create_key = object()
-            @classmethod
-            def _new(cls, normalized: GLboolean, subAttribs: int, divisor: int = 0, attrName: Optional[str] = None):
-                """
-                Create a new _DataAttribute instance.
-                """
-                c_dtype = Data._typeDict[cls.gl_type]
-                return cls(cls.__create_key, c_sizeof(c_dtype) * subAttribs, c_dtype, normalized,
-                                subAttribs,
-                                divisor, attrName)
+        # Convert to numpy array for easier inspection
+        # Assuming the data is in float format for simplicity
+        data_array = np.frombuffer(data, dtype=self.dtype)
+        return data_array, buffer_size
 
-            def __init__(self, create_key, numBytes: GLint, ctype_base: GLenum, normalized: GLboolean, numElements: GLsizei, divisor: int,
-                         attrName: Optional[str]):
-                if create_key != Data.Attribute._Base.__create_key:
-                    raise ValueError("_DataAttribute objects must be created using _DataAttribute._new")
-                self.numBytes: GLint = numBytes
-                self.ctype_base = ctype_base
-                self.normalized: GLboolean = normalized
-                self.numElements: GLsizei = numElements
-                self.ctype = self.numElements * self.ctype_base
-                self.divisor = divisor
-                self.attrName = attrName
+    def print_data(self, offset=0, size=None):
+        data_array, buffer_size = self.get_data()
+        print(f"Buffer Data (offset: {offset}, size: {buffer_size}):")
+        print(data_array)
 
-            @classmethod
-            def Single(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE, attrName: Optional[str] = None):
-                return cls._new(normalized, 1, divisor, attrName)
+    def __del__(self):
+        self._cleanup()
 
-            @classmethod
-            def Array(cls, normalized: GLboolean, arraySize: int, divisor: int = 0, attrName: Optional[str] = None):
-                if arraySize > 4:
-                    divisor = divisor or 1
-                return cls._new(normalized, arraySize, divisor, attrName)
-
-            @classmethod
-            def Vec2(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE, attrName: Optional[str] = None):
-                return cls.Array(normalized, 2, divisor, attrName)
-
-            @classmethod
-            def Vec3(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE, attrName: Optional[str] = None):
-                return cls.Array(normalized, 3, divisor, attrName)
-
-            @classmethod
-            def Vec4(cls, divisor: int = 0, normalized: GLboolean = GL_FALSE, attrName: Optional[str] = None):
-                return cls.Array(normalized, 4, divisor, attrName)
-
-            @classmethod
-            def _Mat(cls, divisor: int = 0, matRows: int = 2, matCols: int = 2, normalized: GLboolean = GL_FALSE,
-                     attrName: Optional[str] = None):
-                total_elements = matRows * matCols
-                return cls.Array(normalized, total_elements, divisor, attrName=attrName)
-
-            @classmethod
-            def Mat4(cls, divisor: int = 1, normalized: GLboolean = GL_FALSE, attrName: Optional[str] = None):
-                return cls._Mat(divisor, 4, 4, normalized, attrName)
-
-        class _AttribChild(_Base):
-            @classmethod
-            def Bool(cls):
-                return cls[GL_BOOL]
-            @classmethod
-            def UByte(cls):
-                return cls[GL_UNSIGNED_BYTE]
-            @classmethod
-            def Byte(cls):
-                return cls[GL_BYTE]
-            @classmethod
-            def UShort(cls):
-                return cls[GL_UNSIGNED_SHORT]
-            @classmethod
-            def Short(cls):
-                return cls[GL_SHORT]
-            @classmethod
-            def UInt(cls):
-                return cls[GL_UNSIGNED_INT]
-            @classmethod
-            def Int(cls):
-                return cls[GL_INT]
-            @classmethod
-            def Float(cls):
-                return cls[GL_FLOAT]
-            @classmethod
-            def Double(cls):
-                return cls[GL_DOUBLE]
-
-        class Vertex(_AttribChild):
-            def set_attribute_array_pointer(self, id: GLuint, stride: GLsizei, offset: GLsizei):
-                """
-                Set the vertex attribute pointer for this attribute.
-                """
-                num_components = 4 if self.numElements > 4 else self.numElements
-                num_attributes = (self.numElements + num_components - 1) // num_components
-
-                for c in range(num_attributes):
-                    glEnableVertexAttribArray(id + c)
-
-                    component_size = min(num_components, self.numElements - c * num_components)
-                    component_bytes = (self.numBytes // self.numElements) * component_size
-                    component_offset = offset + component_bytes * c
-
-                    if self.gl_type == GL_INT:
-                        glVertexAttribIPointer(id + c, component_size, self.gl_type, stride,
-                                               ctypes.c_void_p(component_offset))
-                    else:
-                        glVertexAttribPointer(id + c, component_size, self.gl_type, self.normalized, stride,
-                                              ctypes.c_void_p(component_offset))
-
-                    glVertexAttribDivisor(id + c, self.divisor)
-                    print(
-                        f"\nPointer Set:\t{{id: {id + c} | elements: {component_size} | bytes: {component_bytes} | dtype: {self.gl_type} | normalized: {self.normalized} | stride: {stride} | offset: {component_offset} | divisor: {self.divisor}}}")
-
-        class UniformBlock(_AttribChild):
-            def set_uniform_block_binding(self, program: GLuint, blockIndex: GLuint, bindingPoint: GLuint):
-                """
-                Set the uniform block binding for this uniform attribute.
-                """
-                glUniformBlockBinding(program, blockIndex, bindingPoint)
-                print(
-                    f"Uniform block binding set: {{program: {program} | blockIndex: {blockIndex} | bindingPoint: {bindingPoint}}}")
-
-    def _struct(attributes: Union[List[Attribute.Vertex], List[Attribute.UniformBlock]]) -> ctypes.Structure:
-        fields = []
-        for i, attribute in enumerate(attributes):
-            attributeName = attribute.attrName if attribute.attrName is not None else f"attribute_{i}"
-            fields.append((attributeName, attribute.ctype))
-
-        class Struct(ctypes.Structure):
-            _fields_ = fields
-
-            def __init__(self, data: list):
-                super().__init__()
-                num_fields = len(self)
-                if num_fields != len(data):
-                    raise ValueError(
-                        "data must have same amount of attributes as the number of fields in the struct")
-                for fieldID in range(num_fields):
-                    self.set_attribute(fieldID, data[fieldID])
-
-            def set_attribute(self, fieldID: int, fieldData):
-                field = self[fieldID]
-                field_length = len(field)
-                field_data_length = 1
+    def _cleanup(self):
+        if glIsBuffer(self.ID):
+            if not self._cleaned and self.ID and self.ID != 0:
                 try:
-                    field_data_length = len(fieldData)
-                except:
-                    pass
-                if field_length != field_data_length:
-                    raise ValueError("fieldData must have the same number of elements as the struct field")
-                elif 1 == field_length:
-                    field = fieldData
-                else:
-                    for elementID in range(field_length):
-                        field[elementID] = fieldData[elementID]
-
-            def __getitem__(self, key):
-                if isinstance(key, str):
-                    for name, _ in self._fields_:
-                        if name == key:
-                            return getattr(self, name)
-                    raise KeyError(f"Field '{key}' not found in DataStruct.")
-                elif isinstance(key, int):
-                    if 0 <= key < len(self._fields_):
-                        name, _ = self._fields_[key]
-                        return getattr(self, name)
-                    else:
-                        raise IndexError("Index out of range.")
-                else:
-                    raise TypeError("Key must be an integer or string.")
-
-            def __iter__(self):
-                for name, _ in self._fields_:
-                    yield getattr(self, name)
-
-            def __len__(self):
-                return len(self._fields_)
-
-        return Struct
-
-    class _Layout:
-        def __init__(self, attributes: List, startID: int = 0):
-            super().__init__()
-            if not isinstance(attributes, List):
-                if not isinstance(attributes, Data.Attribute._Base):
-                    raise TypeError("attributes should be a list of _DataAttribute instances.")
-                attributes = [attributes]
-
-            if not all(isinstance(attribute, Data.Attribute._Base) for attribute in attributes):
-                raise TypeError("All elements in attributes must be instances of _DataAttribute.")
-
-            self.attributes: Union[List[Data.Attribute.Vertex], List[Data.Attribute.UniformBlock]] = attributes
-            self.struct = Data._struct(attributes)
-            self.numElements = sum(attribute.numElements for attribute in self.attributes)
-
-            self.stride = c_sizeof(self.struct)
-            self.nextID = startID
-
-        def __getitem__(self, key):
-            return self.struct[key]
-
-        def __iter__(self):
-            return iter(self.struct)
-
-    class VertexLayout(_Layout):
-        def set_attribute_array_pointers(self, extraOffset: int = 0):
-            """
-            Set the attribute pointers for the data layout.
-
-            Args:
-                extraOffset (int): Additional offset to apply to each attribute's offset.
-            """
-            offset = 0
-            for attribute in self.attributes:
-                attribute.set_attribute_array_pointer(self.nextID, self.stride, offset + extraOffset)
-                offset += attribute.numBytes
-                if attribute.numElements < 5:
-                    self.nextID += 1
-                else:
-                    self.nextID += attribute.numElements // 4
-
-    class UniformBlockLayout(_Layout):
-        def __init__(self, blockName: str, attributes: List, startID: int = 0):
-            super().__init__(attributes, startID)
-            self.blockName = blockName
-
-    class Set:
-        def __init__(self, layout, data: Union[Vector, ctypes.Structure]):
-            self.layout: Data._Layout = layout
-            if isinstance(data, ctypes.Structure):
-                data = Vector.from_iterable(ctypes.Structure, [data])
-            self.data: Vector = data
-
-VA = Data.Attribute.Vertex
-UBA = Data.Attribute.UniformBlock
-_AttributeBase = Data.Attribute._Base
-
-DVL = Data.VertexLayout
-DUBL = Data.UniformBlockLayout
-
-DataSet = Data.Set
-
-aLocalPosXYZ = VA.Float().Vec3(attrName="aLocalPosXYZ")
-aColorRGB = VA.Float().Vec3(attrName="aColorRGB")
-aInstColorRGB = VA.Float().Vec3(1, attrName="aColorRGB")
-aAlpha = VA.Float().Single(attrName="aAlpha")
-aInstAlpha = VA.Float().Single(1, attrName="aAlpha")
-aModel = VA.Float().Mat4(attrName="aModel")
-
-aLocalPosXY = VA.Float().Vec2(attrName="aLocalPosXY")
-aTexUV = VA.Float().Vec2(attrName="aTexUV")
-aTexPos = VA.Float().Vec2(1, attrName="aTexPos")
-aTexSize = VA.Float().Vec2(1, attrName="aTexSize")
-
-aSideID = VA.UShort().Single(1, attrName="aSideID")
-
-aWorldPos = VA.Float().Vec3(6, attrName="aWorldPos")
+                    glDeleteBuffers(1, [self.ID])
+                except TypeError as e:
+                    print(f"TypeError during buffer deletion: {e}")
+                except OpenGL.GL.error.GLError as e:
+                    print(f"OpenGL error during buffer deletion: {e}")
+                except Exception as e:
+                    print(f"Exception during buffer deletion: {e}")
+                finally:
+                    self.ID = 0  # Mark as deleted
+                    self._cleaned = True  # Set the flag to indicate cleanup is done
+            else:
+                if not self._cleaned:
+                    print(f"Buffer ID is invalid or already deleted: {self.ID}")
+        else:
+            print(f"Buffer ID {self.ID} does not exist.")
 
 
-# Define a default vertex layout for standard vertex attributes
-defaultLayout = DVL([
-    aLocalPosXYZ,  # Vertex position (x, y, z)
-    aColorRGB,  # Vertex color (r, g, b)
-    aAlpha  # Vertex alpha (a)
-])
+class VertexBuffer(Buffer):
+    def __init__(self, usage, dtype=np.float32):
+        super().__init__(GL_ARRAY_BUFFER, usage, dtype)
 
-# Define a default instance layout for per-instance data
-defaultInstanceLayout = DVL([
-    aModel  # Model matrix (4x4 matrix for transformations)
-])
+
+class ElementBuffer(Buffer):
+    dtype = GL_UNSIGNED_SHORT
+
+    def __init__(self, usage):
+        super().__init__(GL_ELEMENT_ARRAY_BUFFER, usage, np.ushort)
+
+
+@dataclass
+class VertexAttribute:
+    name: str
+    data: Union[Any, Collection[Any], List[Collection[Any]], np.ndarray]
+    normalized: bool = False
+    divisor: GLsizei = 0
+
+    def __post_init__(self):
+        if not isinstance(self.data, List):
+            self.data = [self.data]
+
+        self._num_components = 1
+        self._elem_count = 1
+        data_point: Union[Any, Collection[Any]] = self.data[0]
+        if isinstance(data_point, Collection):  # Indicates Vector or Matrix
+            self._elem_count = len(data_point)
+            data_point = data_point[0]
+            if isinstance(data_point, Collection):  # Indicates this is a Matrix
+                self._num_components, self._elem_count = self._elem_count, len(data_point)
+                data_point = data_point[0]
+                if isinstance(data_point, Collection):
+                    raise TypeError("Maximum Vertex Attribute Depth is 2 for Matrix (WxH)")
+        self.num_elements = self._num_components * self._elem_count
+
+        self.gl_type: GLenum = None
+        self.dtype: np.dtype = None
+        elem_size: int = 4  # int32 and float32 are 4 bytes in size
+        if isinstance(data_point, int):
+            self.gl_type = GL_INT
+            self.dtype = np.int32
+        elif isinstance(data_point, float):
+            self.gl_type = GL_FLOAT
+            self.dtype = np.float32
+        else:
+            raise TypeError("Only Base Data Types of int or float are allowed")
+
+        self.data = np.array(self.data, dtype=self.dtype)
+        self.base_size: int = elem_size * self.num_elements
+
+    @property
+    def bytes(self) -> bytes:
+        return self.data.tobytes()
+
+    @property
+    def num_bytes(self) -> int:
+        return self.data.nbytes
+
+    @property
+    def size(self):
+        return len(self.data)
+
+    def set_attribute_pointer(self, start_index: GLsizei, stride: GLsizei, pointer: GLsizei,
+                              print_attribute=False) -> int:
+        for i in range(self._num_components):
+            attr_index = start_index + i
+            glEnableVertexAttribArray(attr_index)
+
+            component_bytes = (self.num_bytes // self.num_elements) * self._elem_count
+            component_pointer = pointer + component_bytes * i
+
+            if self.gl_type in (GL_INT, GL_UNSIGNED_INT, GL_SHORT, GL_UNSIGNED_SHORT):
+                glVertexAttribIPointer(attr_index, self._elem_count, self.gl_type, stride,
+                                       ctypes.c_void_p(component_pointer))
+            else:
+                glVertexAttribPointer(attr_index, self._elem_count, self.gl_type, self.normalized, stride,
+                                      ctypes.c_void_p(component_pointer))
+            glVertexAttribDivisor(attr_index, self.divisor)
+            if print_attribute:
+                print(
+                    f"Pointer Set:\t{{index: {attr_index} | elements: {self._num_components} | bytes: {component_bytes} | dtype: {self.gl_type} | normalized: {self.normalized} | stride: {stride} | offset: {component_pointer} | divisor: {self.divisor}}}")
+        return attr_index + 1
+
+
+@dataclass
+class DataLayout:
+    attributes: List[VertexAttribute]
+
+    def __post_init__(self):
+        self._strides: Dict[int, int] = {}
+        self._pointers: Dict[int, int] = {}
+        self._attributes: Dict[int, List[VertexAttribute]] = {}
+        self._bytes: Dict[int, Dict[GLenum, bytes]] = {}
+        for attribute in self.attributes:
+            div = attribute.divisor
+            if div not in self._strides.keys():
+                self._strides[div] = 0
+                self._pointers[div] = 0
+                self._attributes[div] = []
+                self._bytes[div] = {}
+            else:
+                if self._strides[div] == 0:
+                    self._strides[div] += self._attributes[div][-1].base_size
+                self._strides[div] += attribute.base_size
+            self._attributes[div].append(attribute)
+            if attribute.gl_type not in self._bytes[div]:
+                self._bytes[div][attribute.gl_type] = attribute.bytes
+            else:
+                self._bytes[div][attribute.gl_type] += attribute.bytes
+
+
+    def set_pointers(self, print_attributes=False):
+        index: int = 0
+        for divisor in sorted(self._strides.keys()):
+            for attribute in self._attributes[divisor]:
+                index = attribute.set_attribute_pointer(
+                    index, self._strides[divisor], self._pointers[divisor], print_attributes
+                )
+
+    def get_data(self) -> List[Tuple[GLenum, int, bytes]]:
+        data: List[Tuple[GLenum, int, bytes]] = []
+        offset: int = 0
+        for div in sorted(self._bytes.keys()):
+            for dtype in self._bytes[div].keys():
+                data.append((dtype, offset, self._bytes[div][dtype]))
+                offset += len(self._bytes[div][dtype])
+        return data
+
+
+class BufferManager:
+    def __init__(self):
+        self.buffers: dict[int, Buffer] = {}
+
+    def _register_buffer(self, buffer):
+        self.buffers[buffer.ID] = buffer
+
+    def create_vbo(self, usage) -> VertexBuffer:
+        buffer = VertexBuffer(usage)
+        self._register_buffer(buffer)
+        return buffer
+
+    def create_ebo(self, usage) -> ElementBuffer:
+        buffer = ElementBuffer(usage)
+        self._register_buffer(buffer)
+        return buffer
+
+    def delete_buffer(self, buffer_id):
+        self.buffers.pop(buffer_id, None)
+
+    def _get_buffer(self, buffer_id, buffer_type=Buffer):
+        buffer = self.buffers.get(buffer_id)
+        if not isinstance(buffer, buffer_type):
+            raise TypeError("Buffer Requested is not of Requested Type")
+        return buffer
+
+    def get_vbo(self, buffer_id) -> VertexBuffer:
+        return self._get_buffer(buffer_id, VertexBuffer)
+
+    def get_ebo(self, buffer_id) -> ElementBuffer:
+        return self._get_buffer(buffer_id, ElementBuffer)
+
+
+class VertexArray:
+    def __init__(self):
+        self.ID = glGenVertexArrays(1)  # Ensure you get the ID correctly
+        self.ebo = None
+        self.buffer_manager = BufferManager()
+        self.attribute_index = 0
+
+    def bind(self):
+        glBindVertexArray(self.ID)
+        if self.ebo:
+            self.ebo.bind()
+
+    def unbind(self):
+        glBindVertexArray(0)
+        if self.ebo:
+            self.ebo.unbind()
+
+    def add_vbo(self, layout: DataLayout, usage=GL_STATIC_DRAW, print_buffer=True) -> VertexBuffer:
+        # Create and bind the vertex buffer object
+        buffer: VertexBuffer = self.buffer_manager.create_vbo(usage)
+
+        # Bind the VAO
+        self.bind()
+
+        # Bind the VBO
+        buffer.bind()
+        buffer.allocate(np.sum([attr.num_bytes for attr in layout.attributes]))
+        [buffer.buffer_sub_data(*data[1:]) for data in layout.get_data()]
+        try:
+            # Set vertex attribute pointers
+            layout.set_pointers(print_buffer)
+        finally:
+            # Unbind the VBO
+            if print_buffer:
+                buffer.print_data()
+            buffer.unbind()
+
+        # Unbind the VAO
+        self.unbind()
+
+        return buffer
+
+    def set_ebo(self, usage=GL_STATIC_DRAW, data: np.ndarray = None, print_buffer=True) -> ElementBuffer:
+        ebo: ElementBuffer = self.buffer_manager.create_ebo(usage)
+        ebo.bind()
+        ebo.buffer_data(data.tobytes())
+        try:
+            self.ebo = ebo
+        finally:
+            if print_buffer:
+                ebo.print_data()
+            ebo.unbind()
+        return ebo
+
+
+    def _cleanup(self):
+        if self.ID and self.ID != 0:  # Check if ID is not None and valid
+            try:
+                glDeleteVertexArrays(1, [self.ID])
+                self.ID = 0  # Mark as deleted
+            except OpenGL.GL.error.GLError as e:
+                print(f"OpenGL error during VAO deletion: {e}")
+            except Exception as e:
+                print(f"Exception during VAO deletion: {e}")
+            finally:
+                self.ID = 0
+
+    def __del__(self):
+        self._cleanup()
+        # The buffer_manager's buffers should be deleted by their own __del__ methods
+        self.buffer_manager = None

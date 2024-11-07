@@ -1,4 +1,5 @@
-from POGLE.Buffer import *
+from POGLE.Core.Core import os, proj_dir
+from POGLE.Geometry.Data import *
 
 _shaderExt = {
     GL_VERTEX_SHADER: "vert",
@@ -11,14 +12,15 @@ _shaderType = {
 _linetab = "\n\t"
 _line = "\n"
 
+
 class Shader:
     def __init__(self, shaderName: str, shaderType: GLenum):
         self.ID = glCreateShader(shaderType)
 
-        self.shaderPath = f"{cwd}/../assets/shaders/{shaderName}.{_shaderExt[shaderType]}"
+        self.shaderPath = f"{proj_dir}\\assets\\shaders\\{shaderName}.{_shaderExt[shaderType]}"
         with open(self.shaderPath) as f:
             self.source = f.read()
-        glShaderSource(self.ID, self.source,)
+        glShaderSource(self.ID, self.source, )
 
         glCompileShader(self.ID)
         if not glGetShaderiv(self.ID, GL_COMPILE_STATUS):
@@ -35,6 +37,7 @@ class Shader:
             finally:
                 self.ID = 0  # Avoid double deletion and mark as deleted
 
+
 class VertexShader(Shader):
     def __init__(self, shaderName: str = "default"):
         super().__init__(shaderName, GL_VERTEX_SHADER)
@@ -45,33 +48,65 @@ class FragmentShader(Shader):
         super().__init__(shaderName, GL_FRAGMENT_SHADER)
 
 
-defaultUniformBlockLayout = DUBL("Matrices", [
-    UBA.Float().Mat4(attrName="uProjection"),  # Projection Matrix
-    UBA.Float().Mat4(attrName="uView")  # View Matrix
-])
+class UniformBlockLayout(DataLayout):
+    def __init__(self, name: str, attributes: List[VertexAttribute]):
+        super().__init__(attributes)
+        self.name = name
 
+
+UBL = UniformBlockLayout
+#
+# defaultUniformBlockLayout = UBL("ub_Matrices", [
+#     VA.Float.Mat4(aName="uProjection"),  # Projection Matrix
+#     VA.Float.Mat4(aName="uView")  # View Matrix
+# ])
 
 
 class UniformBlock:
     __create_key = object()
-    layout: DUBL
+    layout: UBL
     _UBCache: dict = {}
     _next_block_binding: int = 0
 
-    def __init__(self, create_key, uniformBlockElements, layout: DUBL = defaultUniformBlockLayout):
-        super().__init__(uniformBlockElements, layout)
+    def __init__(self, create_key, layout: UBL):
+        self.layout: layout = layout
+        self.data: np.ndarray | None = None
+        self.bytes: int | None = None
+        #self.setData(layout.get_data())
         assert (create_key == UniformBlock.__create_key), \
             "UniformBlock objects must be created using UniformBlock.create"
 
         self.binding: int = UniformBlock.next_block_binding()
         UniformBlock._UBCache[self.name]: UniformBlock = self
 
+    def setData(self, dataElements):
+        self.data = []
+        self.bytes = 0
+        for i in range(len(dataElements)):
+            dataElement = dataElements[i]
+            vertAttrib = self.layout.attributes[i]
+
+            self.bytes += vertAttrib.num_bytes
+            #dtype = _typeDict[vertAttrib.dtype]
+            # Check the type and handle padding if it's a vec2
+            if isinstance(dataElement, glm.vec2):
+                padded_element = np.array([dataElement.x, dataElement.y, 0.0, 0.0], np.float32)
+                self.data = np.concatenate((self.data, padded_element.flatten()), dtype=np.float32)
+            elif isinstance(dataElement, glm.mat4):
+                # Handle mat4 elements (reshape and transpose as in std140 layout)
+                dataElement = np.array(dataElement, np.float32).reshape(4, 4).T
+                self.data = np.concatenate((self.data, dataElement.flatten()), dtype=np.float32)
+            else:
+                # Default case for other types
+                dataElement = np.array(dataElement, np.float32)
+                self.data = np.concatenate((self.data, dataElement.flatten()), dtype=np.float32)
+
     @classmethod
-    def create(cls, uniformBlockElements, layout: DUBL = defaultUniformBlockLayout):
+    def create(cls, layout: UBL):
         block: UniformBlock | None = UniformBlock.get_uniform_block(layout.name)
         if block:
             return block
-        return UniformBlock(cls.__create_key, uniformBlockElements, layout)
+        return UniformBlock(cls.__create_key, layout)
 
     @staticmethod
     def next_block_binding() -> int:
@@ -124,7 +159,7 @@ class ShaderProgram:
         self.uniLocations[uniform_name] = glGetUniformLocation(self.ID, uniform_name)
         return self.uniLocations[uniform_name]
 
-    def _gul(self, uniform_name: str): # Get uniform location
+    def _gul(self, uniform_name: str):  # Get uniform location
         return self.uniLocations.get(uniform_name, self._cache_uniform(uniform_name))
 
     def _cache_uniform_block(self, block_name: str):
@@ -146,7 +181,7 @@ class ShaderProgram:
             return GL_INVALID_INDEX
         glUniformBlockBinding(self.ID, block_index, block.binding)
 
-    def setMat4(self, name:str, value: glm.mat4):
+    def setMat4(self, name: str, value: glm.mat4):
         glUniformMatrix4fv(self._gul(name), 1, GL_FALSE, glm.value_ptr(value))
 
     def setMat4Array(self, name: str, arr: glm.array):
@@ -155,9 +190,13 @@ class ShaderProgram:
     def setInt(self, name: str, value: GLint):
         glUniform1i(self._gul(name), value)
 
+    def setTexture(self, name: str, texture_index: int):
+        self.setInt(name, texture_index)
+
+
 class UniformBuffer(Buffer):
     def __init__(self):
-        super().__init__(GL_UNIFORM_BUFFER)
+        super().__init__(GL_UNIFORM_BUFFER, GL_STATIC_DRAW)
         self.blockLocations = {}
 
     def bind_block(self, block_binding: int = 0):

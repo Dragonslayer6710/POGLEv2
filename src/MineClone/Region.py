@@ -9,6 +9,7 @@ from typing import Callable, BinaryIO
 import nbtlib
 
 from Chunk import *
+
 if TYPE_CHECKING:
     from World import World
 
@@ -19,6 +20,9 @@ REGION_CHUNK_EXTENTS: glm.vec3 = glm.vec3(REGION_CHUNK_WIDTH, 1, REGION_CHUNK_WI
 REGION_NUM_CHUNKS: int = int(np.prod(REGION_CHUNK_EXTENTS))
 _REGION_CHUNK_ID_RANGE: range = range(REGION_NUM_CHUNKS)
 
+REGION_CHUNK_OFFSETS: List[glm.vec3] = [glm.vec3(x, 0, z) for x in _REGION_CHUNK_ID_RANGE for z in
+                                        _REGION_CHUNK_ID_RANGE]
+
 REGION_BLOCK_WIDTH: int = REGION_CHUNK_WIDTH * CHUNK_BLOCK_WIDTH
 REGION_BLOCK_EXTENTS: glm.vec3 = REGION_CHUNK_EXTENTS * CHUNK_BLOCK_EXTENTS
 REGION_NUM_BLOCKS: int = REGION_NUM_CHUNKS * CHUNK_NUM_BLOCKS
@@ -27,8 +31,54 @@ REGION_BASE_AABB = AABB.from_pos_size(size=REGION_BLOCK_EXTENTS)
 
 REGION_CHUNK_NONE_LIST = [None] * REGION_NUM_CHUNKS
 
+PROCESS_POOL_SIZE = max(1, os.cpu_count() - 1)
 
-# Region Chunk Coords to Region Chunk id
+WORLD_REGION_WIDTH: int = 3
+
+if WORLD_REGION_WIDTH % 3:
+    raise RuntimeError(f"World Region Width: {WORLD_REGION_WIDTH} is not acceptable."
+                       f" It must be a multiple of 3")
+WORLD_REGION_WIDTH_HALF: int = WORLD_REGION_WIDTH // 2
+_WORLD_REGION_WIDTH_ID_RANGE: range = range(-WORLD_REGION_WIDTH_HALF, WORLD_REGION_WIDTH_HALF + 1)
+
+
+######### Coordinate - Coordinate Translation #########
+# World Region Coords to World Coords
+def wr_coords_to_w_coords(wr_coords: glm.vec2) -> glm.vec3:
+    return glm.vec3(wr_coords[0], 1, wr_coords[1]) * REGION_BLOCK_EXTENTS // 2
+
+
+# World Coords to Region Chunk Coords
+def w_coords_to_rc_coords(w_coords: glm.vec3) -> glm.vec2:
+    return glm.vec2(w_coords.x // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH,
+                    w_coords.z // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH)
+
+
+def w_coords_to_wr_coords(w_coords: glm.vec3) -> glm.vec2:
+    return glm.vec2(
+        int(w_coords.x / (REGION_BLOCK_EXTENTS.x / 2)),
+        int(w_coords.z / (REGION_BLOCK_EXTENTS.z / 2)),
+    )  # Drops the decimal part
+
+
+######################################################
+
+######### Coordinate - ID Translation #########
+
+def wr_coords_to_wrid(wr_coords: glm.vec2) -> int:
+    # Assuming WORLD_REGION_WIDTH_HALF is defined as half the width of your region grid
+    return int((wr_coords[0] + WORLD_REGION_WIDTH_HALF) +
+               (wr_coords[1] + WORLD_REGION_WIDTH_HALF) * WORLD_REGION_WIDTH)
+
+
+# World Coords to World Region ID
+def w_coords_to_wrid(w_coords: glm.vec3) -> int:
+    return wr_coords_to_wrid(
+        w_coords_to_wr_coords(w_coords)
+    )
+
+
+# Region Chunk Coords to Region Chunk ID
 def rc_coords_to_rcid(rc_coords: Union[int, glm.vec2], z: Optional[int] = None) -> int:
     if isinstance(rc_coords, int):
         if z:
@@ -38,24 +88,45 @@ def rc_coords_to_rcid(rc_coords: Union[int, glm.vec2], z: Optional[int] = None) 
     return int(rc_coords[0] + rc_coords[1] * REGION_CHUNK_WIDTH)
 
 
+# World Coords to Region Chunk ID
+def w_coords_to_rcid(w_coords: glm.vec3) -> int:
+    return rc_coords_to_rcid(
+        w_coords_to_rc_coords(w_coords)
+    )
+
+
+###############################################
+
+######### ID - Coordinate Translation #########
+# World Region ID to World Region Coords
+def wrid_to_wr_coords(wrid: int) -> glm.vec2:
+    x = wrid % WORLD_REGION_WIDTH  # Get x coordinate
+    z = wrid // WORLD_REGION_WIDTH  # Get z coordinate
+    return glm.vec2(x, z)  # Return as glm.vec2 object
+
+
+# World Region ID to World Coords
+def wrid_to_w_coords(wrid: int) -> glm.vec3:
+    return wr_coords_to_w_coords(wrid_to_wr_coords(wrid))
+
+
+###############################################
+
+
 _CHUNK_MASKS = tuple(1 << i for i in _REGION_CHUNK_ID_RANGE)
 
 
 @dataclass
 class Region(MCPhys, aabb=REGION_BASE_AABB):
     chunks: List[Optional[Chunk]] = field(default_factory=lambda: copy(REGION_CHUNK_NONE_LIST))
+
+    _from_bytes: bool = False
     world: Optional[World] = None
 
     def __post_init__(self):
         super().__post_init__()
-
-        self.octree: Optional[Octree] = None
-
-        self._solid_dict: Dict[int, Chunk] = {}
-        self._solid_bitmask: int = 0
-        self._solid_list_cache: List[Chunk] = []
-        self._num_solid_cache: int = 0
-        self._solid_cache_valid: bool = False
+        if self.index is None:
+            return
 
         self._renderable_dict: Dict[int, Chunk] = {}
         self._renderable_bitmask: int = 0
@@ -63,13 +134,56 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
         self._num_renderable_cache: int = 0
         self._renderable_cache_valid: bool = False
 
+        self._update_deque: deque[Chunk] = deque()
+        self._awaiting_update: bool = False
+
+        self.initialized: bool = False
+
+    def _get_chunk_id(self, x: int, z: int) -> int:
+        return (z * REGION_CHUNK_WIDTH) + x
+
     def initialize(self, region_pos: glm.vec3, world: Optional[World] = None):
         if world:
             if self.world:
                 raise RuntimeError("Attempted to set world of a region already set in a world")
             self.world = world
+
         self.pos += region_pos
-        self.octree = Octree(self.bounds, CHUNK_BLOCK_EXTENTS)
+
+        if self._from_bytes:
+            for chunk in self.chunks:
+                if chunk is not None:
+                    chunk.initialize(self)
+
+        self.enqueue_update()
+        self.initialized = True
+
+    def enqueue_update(self):
+        if self._awaiting_update:
+            raise RuntimeError("Attempted to put Region into update queue whilst already awaiting an update")
+        self._awaiting_update = True
+        self.world.enqueue_region(self)
+
+    def stack_update(self):
+        if self._awaiting_update:
+            raise RuntimeError("Attempted to put Region into update queue whilst already awaiting an update")
+        self._awaiting_update = True
+        self.world.stack_region(self)
+
+    def enqueue_chunk(self, chunk: Chunk):
+        self._update_deque.append(chunk)
+
+    def stack_chunk(self, chunk: Chunk):
+        self._update_deque.appendleft(chunk)
+
+    def update(self):
+        if not self._awaiting_update:
+            return  # Shouldn't be possible
+        while self._update_deque:
+            chunk = self._update_deque.popleft()
+            chunk.update()
+            self.update_chunk_in_lists(chunk)
+        self._awaiting_update = False
 
     def _is_index_out_of_bounds(self, chunk_index):
         if not -1 < chunk_index < REGION_NUM_CHUNKS:
@@ -78,9 +192,11 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
     def init_chunk(self, chunk_index: int):
         self._is_index_out_of_bounds(chunk_index)
         self.chunks[chunk_index] = Chunk(chunk_index, region=self)
+        if not self._awaiting_update:
+            self.enqueue_update()
 
-    def get_chunk(self, chunk_index: int) -> Chunk:
-        self._is_index_out_of_bounds(chunk_index)
+    def get_chunk(self, chunk_index: int) -> Optional[Chunk]:
+        # self._is_index_out_of_bounds(chunk_index)
         return self.chunks[chunk_index]
 
     def init_chunk_from_rc_coords(self, rc_coords: glm.vec2):
@@ -107,15 +223,11 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
             self._solid_bitmask |= _CHUNK_MASKS[chunk.index]
             self._solid_cache_valid = False
 
-            self.octree.insert(chunk)
-
     def _chunk_is_not_solid(self, chunk: Chunk):
         if self._is_chunk_solid(chunk):  # Check if Chunk was solid
             self._solid_dict.pop(chunk.index)
             self._solid_bitmask &= ~_CHUNK_MASKS[chunk.index]
             self._solid_cache_valid = False
-
-            self.octree.remove(chunk)
 
     def _is_chunk_renderable(self, chunk: Chunk):
         return self._renderable_bitmask & _CHUNK_MASKS[chunk.index]
@@ -133,36 +245,10 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
             self._renderable_cache_valid = False
 
     def update_chunk_in_lists(self, chunk: Chunk):
-        if chunk.is_solid:
-            self._chunk_is_solid(chunk)
-        else:
-            self._chunk_is_not_solid(chunk)
-
         if chunk.is_renderable:
             self._chunk_is_renderable(chunk)
         else:
             self._chunk_is_not_renderable(chunk)
-
-    def _validate_solid_cache(self):
-        self._solid_list_cache = self._solid_dict.values()
-        self._num_solid_cache = len(self._solid_list_cache)
-        self._solid_cache_valid = True
-
-    @property
-    def solid_chunks(self):
-        if not self._solid_cache_valid:
-            self._validate_solid_cache()
-        return self._solid_list_cache
-
-    @property
-    def num_solid_chunks(self):
-        if not self._solid_cache_valid:
-            self._validate_solid_cache()
-        return self._num_solid_cache
-
-    @property
-    def is_solid(self) -> bool:
-        return bool(self._num_solid_cache)
 
     def _validate_renderable_cache(self):
         self._renderable_list_cache = self._renderable_dict.values()
@@ -182,17 +268,31 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
         return self._num_renderable_cache
 
     @property
+    def non_none_chunks(self) -> Tuple[Chunk]:
+        return tuple(filter(lambda x: x is not None, self.chunks))
+
+    @property
     def is_renderable(self) -> bool:
         return bool(self._num_renderable_cache)
 
+    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
+        if self.bounds.intersectPoint(block_pos):
+            local_pos = [int(i) for i in block_pos.xz - self.pos]
+            chunk = self.get_chunk(self._get_chunk_id(*local_pos))
+            if chunk is None:
+                return None
+            return chunk.get_block(block_pos)
+        else:
+            return self.world.get_block(block_pos)
+
     def serialize(self) -> bytes:
         # create byte arrays to store chunk locations, timestamps and payloads
-        chunk_locations = bytearray(4096) # 1024 entries * 4 bytes each
-        chunk_timestamps = bytearray(4096) # 1024 entries * 4 bytes each
-        chunk_data = bytearray() # store actual chunk data here
+        chunk_locations = bytearray(4096)  # 1024 entries * 4 bytes each
+        chunk_timestamps = bytearray(4096)  # 1024 entries * 4 bytes each
+        chunk_data = bytearray()  # store actual chunk data here
 
         # Keep track of current sector offset (starting after the header)
-        current_sector_offset = 2 # Locations and timestamps use up 2 sectors (4096 bytes each)
+        current_sector_offset = 2  # Locations and timestamps use up 2 sectors (4096 bytes each)
 
         for chunk_index, chunk in enumerate(self.chunks):
             if isinstance(chunk, Chunk):
@@ -281,8 +381,8 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
             chunks.append(chunk)
         return Region(wrid, chunks)
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     def test():
         from World import World
         world_path = os.getcwd() + "\\region_test_world"
@@ -291,7 +391,6 @@ if __name__ == "__main__":
         World.save_region_to_file(region_before_save, world_path)
         region_after_save = World.load_region_from_file(4, world_path)
         quit()
-
 
 
     num_tests = 1
