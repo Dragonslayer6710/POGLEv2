@@ -49,7 +49,7 @@ class BlockData:
     name: str
     id: BlockID
     face_textures: Optional[List[FaceTexID]] = field(default_factory=lambda: [FaceTexID.Null for _ in range(6)])
-    face_sizes: Optional[List[FaceSizeID]] = field(default_factory=lambda: [FaceSizeID.Full for _ in range(6)])
+    face_sizes: Optional[List[FaceTexSizeID]] = field(default_factory=lambda: [FaceTexSizeID.Full for _ in range(6)])
     is_solid: bool = True
     is_opaque: bool = True
     states: Dict[str, Any] = field(default_factory=dict)
@@ -174,10 +174,9 @@ _face_model_mats: Dict[Side, glm.mat4] = {
     Side.Bottom: NMM(glm.vec3(0, -1.0, 0), glm.vec3(-90, 0, 0)),
 }
 
-BLOCK_NULL_INSTANCE: np.ndarray[int] = np.array([
-    [i, FaceTexID.Null, FaceSizeID.Full] for i in range(6)
-]).flatten()
-
+BLOCK_FACE_IDS = np.array([i for i in range(6)], dtype=np.int32)
+NULL_BLOCK_FACE_TEX_IDS = np.array([FaceTexID.Null for i in range(6)], dtype=np.int32)
+FULL_BLOCK_FACE_TEX_SIZE_IDS = np.array([FaceTexSizeID.Full for i in range(6)], dtype=np.int32)
 
 @dataclass
 class Block(MCPhys, aabb=BLOCK_BASE_AABB):
@@ -208,7 +207,9 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         self.initialized: bool = False
         self._awaiting_update: bool = False
 
-        self.face_instances: List[int] = copy(BLOCK_NULL_INSTANCE)
+        self.face_ids: np.ndarray = deepcopy(BLOCK_FACE_IDS)
+        self.face_tex_ids: np.ndarray = deepcopy(NULL_BLOCK_FACE_TEX_IDS)
+        self.face_tex_sizes: np.ndarray = deepcopy(FULL_BLOCK_FACE_TEX_SIZE_IDS)
 
     def initialize(self, chunk: Optional[Chunk] = None):
         if chunk:
@@ -246,8 +247,7 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         was_opaque = self.is_opaque
 
         self.data = block_data
-        for i in range(6):
-            self.face_instances[3 * i + 1] = self.data.face_textures[i]
+        self.face_tex_ids[:] = block_data.face_textures[:]
 
         if was_solid and not self.is_solid:
             pass

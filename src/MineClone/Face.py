@@ -31,7 +31,7 @@ class FaceTexID(Renum):
     GrassSide = 3
 
 
-class FaceSizeID(Renum):
+class FaceTexSizeID(Renum):
     Full = 0
 
 

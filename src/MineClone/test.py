@@ -37,7 +37,7 @@ import math
 # data = dl.get_data()
 # vao = VertexArray()
 # vao.add_vbo(dl)
-
+# quit()
 
 # Circular motion parameters
 radius = 5.0  # Distance from the origin
@@ -65,57 +65,86 @@ def _main():
     # Define the perspective projection and view matrix
     from POGLE.Renderer.Camera import Camera
     camera = Camera(zFar=1000)
-    camera.Position = glm.vec3(0, 64, 0)
+    camera.Position = glm.vec3(0, 0, 5)
     vao = VertexArray()
     vao.set_ebo(data=np.array(Quad._indices, dtype=np.ushort))
     vao.add_vbo(bfs)
+
     shader.use()
     _faceTextureAtlas.bind()
     texture_unit = _faceTextureAtlas.get_texture_slot()
     shader.setTexture("tex0", texture_unit)
-    #mats = [glm.mat4()] * 65536
-    #mats = chunk.block_instances
+    # mats = [glm.mat4()] * 65536
+    # mats = chunk.block_instances
 
-    #mesh = ShapeMesh(
+    # mesh = ShapeMesh(
     #    # mats,  # chunk.block_instances[:-1],
     #    bfs,
     #    shader, {"tex0": _faceTextureAtlas}
-    #)
+    # )
     # quit()
     glEnable(GL_DEPTH_TEST)
 
     projection = camera.get_projection()  # glm.perspective(glm.radians(45.0), 800 / 600, 0.1, 100.0)
-    view = glm.translate(camera.GetViewMatrix(), glm.vec3(0, 0, -5))
-    matrices_ubo = UniformBuffer()
-    matrices_ub = UniformBlock.create(UniformBlockLayout(
+    view = camera.GetViewMatrix()
+    ubo_mats = UniformBuffer()
+    ub_mats = UniformBlock.create(UniformBlockLayout(
         "ub_Matrices",
         [
             VertexAttribute("u_Projection", projection),
             VertexAttribute("u_View", view)
         ]
     ))
-    matrices_ubo.bind_block(matrices_ub.binding)
+    ubo_mats.bind_block(ub_mats.binding)
+    ubo_mats.bind()
+    ubo_mats.buffer_data(
+        ub_mats.data
+    )
+    ubo_mats.unbind()
 
-    matrices_ubo.bind()
-    data = matrices_ub.layout.get_data()
-    matrices_ubo.buffer_data(data[0][2])
-    matrices_ubo.unbind()
-
-    shader.bind_uniform_block("ub_Matrices")
-
-    face_data_ubo = UniformBuffer()
-    face_data_ub = UniformBlock.create(
+    ubo_face_transforms = UniformBuffer()
+    ub_face_transforms = UniformBlock.create(
         UniformBlockLayout(
-            "ub_FaceData",
+            "ub_FaceTransforms",
             [
-                VertexAttribute("u_FaceTransform", list(_face_model_mats.values())),
+                VertexAttribute("u_FaceTransform", list(_face_model_mats.values()))
+            ]
+        )
+    )
+    ubo_face_transforms.bind_block(ub_face_transforms.binding)
+    ubo_face_transforms.bind()
+    ubo_face_transforms.buffer_data(
+        ub_face_transforms.data
+    )
+    ubo_face_transforms.unbind()
+
+    ubo_face_tex_positions = UniformBuffer()
+    ub_face_tex_positions = UniformBlock.create(
+        UniformBlockLayout(
+            "ub_FaceTexPositions",
+            [
                 VertexAttribute(
                     "u_TexPositions",
                     [
                         _faceTextureAtlas.get_sub_texture(i).pos
                         for i in range(4)
                     ]
-                ),
+                )
+            ]
+        )
+    )
+    ubo_face_tex_positions.bind_block(ub_face_tex_positions.binding)
+    ubo_face_tex_positions.bind()
+    ubo_face_tex_positions.buffer_data(
+        ub_face_tex_positions.data
+    )
+    ubo_face_tex_positions.unbind()
+
+    ubo_face_tex_sizes = UniformBuffer()
+    ub_face_tex_sizes = UniformBlock.create(
+        UniformBlockLayout(
+            "ub_FaceTexSizes",
+            [
                 VertexAttribute(
                     "u_TexSizes",
                     [_faceTextureAtlas.get_sub_texture(0).size]
@@ -123,22 +152,27 @@ def _main():
             ]
         )
     )
-    face_data_ubo.bind_block(face_data_ub.binding)
+    ubo_face_tex_sizes.bind_block(ub_face_tex_sizes.binding)
+    ubo_face_tex_sizes.bind()
+    ubo_face_tex_sizes.buffer_data(
+        ub_face_tex_sizes.data
+    )
 
-    face_data_ubo.bind()
-    data = face_data_ub.layout.get_data()
-    data_sum = data[0][2]# + data[0][2]
-    for i in range(1, len(data)):
-        data_sum += data[i][2]
-    face_data_ubo.buffer_data(data_sum)
-    face_data_ubo.unbind()
+    ubo_face_tex_sizes.unbind()
 
-    shader.bind_uniform_block("ub_FaceData")
+    ubo_face_tex_positions.print_data()
+    ubo_face_tex_sizes.print_data()
+
+    shader.bind_uniform_block("ub_Matrices")
+    shader.bind_uniform_block("ub_FaceTransforms")
+    shader.bind_uniform_block("ub_FaceTexPositions")
+    shader.bind_uniform_block("ub_FaceTexSizes")
 
     # Main loop
     previous_time = glfw.get_time()
     old_x, old_y = 0, 0
-    glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
+    track_cursor = False
+    # glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
     while not glfw.window_should_close(window):
         # Clear the color buffer
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -175,8 +209,6 @@ def _main():
         delta_x, delta_y = new_x - old_x, new_y - old_y
         old_x, old_y = new_x, new_y
 
-        camera.ProcessMouseMovement(delta_x, -delta_y, True)
-
         keys = [
             glfw.KEY_W,
             glfw.KEY_A,
@@ -207,6 +239,7 @@ def _main():
                     case glfw.KEY_ESCAPE:
                         escape_pressed = True
         if escape_pressed:
+            track_cursor = not track_cursor
             match glfw.get_input_mode(window, glfw.CURSOR):
                 case glfw.CURSOR_DISABLED:
                     mode = glfw.CURSOR_NORMAL
@@ -214,21 +247,24 @@ def _main():
                     mode = glfw.CURSOR_DISABLED
             glfw.set_input_mode(window, glfw.CURSOR, mode)
 
+        if track_cursor:
+            camera.ProcessMouseMovement(delta_x, -delta_y, True)
+
         view = camera.GetViewMatrix()
 
         # Update UBO with new projection and view matrices
-        matrices_ubo.bind()
-        matrices_ub.setData([projection, view])  # Assuming you have modified setData to handle updates
-        matrices_ubo.buffer_data(matrices_ub.data)
-        matrices_ubo.unbind()
+        ubo_mats.bind()
+        ub_mats.set_data([projection, view])  # Assuming you have modified setData to handle updates
+        ubo_mats.buffer_data(ub_mats.data)
+        ubo_mats.unbind()
 
-        shader.bind_uniform_block("Matrices")
+        shader.bind_uniform_block("ub_Matrices")
 
         shader.use()
         vao.bind()
         glDrawElementsInstanced(GL_TRIANGLES, len(Quad._indices), GL_UNSIGNED_SHORT, None, bfs.attributes[-1].size)
         vao.unbind()
-        #mesh.draw()
+        # mesh.draw()
 
         # Swap front and back buffers
         glfw.swap_buffers(window)

@@ -80,7 +80,7 @@ class Game:
         if numElements:
             self.MatricesUBO.bind()
             if numElements == 2:
-                self.matUB.setData([projection, view])
+                self.matUB.set_data([projection, view])
                 self.MatricesUBO.buffer_data(self.matUB.bytes, self.matUB.data)
             else:
                 data = DataPoint.prepare_data(dataElements, DataLayout([FloatDA.Mat4()]))

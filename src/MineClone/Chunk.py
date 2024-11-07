@@ -16,7 +16,6 @@ import pickle
 
 import nbtlib
 import numpy as np
-from Tools.i18n.msgfmt import generate
 
 from Block import *
 from Entity import *
@@ -31,11 +30,11 @@ if TYPE_CHECKING:
 
 from POGLE.Physics.SpatialTree import Octree
 
-CHUNK_BLOCK_WIDTH = 16
+CHUNK_BLOCK_WIDTH = 2
 
 _CHUNK_BLOCK_HORIZONTAL_ID_RANGE = range(CHUNK_BLOCK_WIDTH)
 
-CHUNK_BLOCK_HEIGHT = 64
+CHUNK_BLOCK_HEIGHT = 2
 _CHUNK_BLOCK_VERTICAL_ID_RANGE = range(CHUNK_BLOCK_HEIGHT)
 
 CHUNK_BLOCK_EXTENTS = glm.vec3(CHUNK_BLOCK_WIDTH, CHUNK_BLOCK_HEIGHT, CHUNK_BLOCK_WIDTH)
@@ -123,6 +122,7 @@ def _decompress_chunk_data(compressed_data, compression_type):
     raise ValueError("Unknown compression type reference provided")
 
 
+NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK_NUM_BLOCKS, dtype=np.ndarray)
 @dataclass
 class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
     blocks: Tuple[Block, ...] = field(default_factory=lambda: [Block(i) for i in _CHUNK_BLOCK_ID_RANGE])
@@ -153,7 +153,10 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
 
         self.initialized: bool = False
 
-        self.block_face_instances: np.ndarray[np.int32] = np.empty((CHUNK_NUM_BLOCKS*6*3,), dtype=np.int32)
+        self.block_face_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
+        self.block_face_tex_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
+        self.block_face_tex_size_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
+
         self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK_NUM_BLOCKS,), dtype=np.ndarray)
 
         if self.region:
@@ -188,7 +191,9 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
         self.pos -= CHUNK_BLOCK_EXTENTS / 2
         if self._from_nbt:
             for block in self.blocks:
-                self.block_face_instances[block.index: block.index+18] = block.face_instances
+                self.block_face_ids[block.index] = block.face_ids
+                self.block_face_tex_ids[block.index] = block.face_tex_ids
+                self.block_face_tex_size_ids[block.index] = block.face_tex_sizes
                 block.initialize(self)
                 self.block_instances[block.index] = NMM(block.pos)
         else:
@@ -209,7 +214,9 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
                             else:
                                 block.set(BlockID.Grass)
                             cnt+=1
-                        self.block_face_instances[block.index: block.index+18] = block.face_instances
+                        self.block_face_ids[block.index] = block.face_ids
+                        self.block_face_tex_ids[block.index] = block.face_tex_ids
+                        self.block_face_tex_size_ids[block.index] = block.face_tex_sizes
                         block.pos += glm.vec3(x,y,z)
                         block.initialize(self)
                         self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
@@ -474,7 +481,10 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
                 VertexAttribute("a_Position", TexQuad._positions),
                 VertexAttribute("a_Alpha", [1.0, 1.0, 1.0, 1.0]),
                 VertexAttribute("a_TexUV", TexQuad._tex_uvs),
-                VertexAttribute("a_Model", list(self.block_instances))
+                VertexAttribute("a_Model", self.block_instances, divisor=6),
+                VertexAttribute("a_FaceID", np.concatenate(self.block_face_ids), divisor=1),
+                VertexAttribute("a_FaceTexID", np.concatenate(self.block_face_tex_ids), divisor=1),
+                VertexAttribute("a_FaceTexSizeID", np.concatenate(self.block_face_tex_size_ids), divisor=1),
             ]
         )
         return BlockShape(

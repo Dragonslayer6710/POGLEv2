@@ -1,11 +1,11 @@
-from OpenGL.GL import *
+from POGLE.OGL.OpenGLContext import *
 import glfw
 import numpy as np
 import ctypes
 from ctypes import c_float, c_double, c_uint, c_short, c_ushort
 import glm
 from dataclasses import dataclass
-from typing import List, Collection, Union, Any, Tuple, Dict
+from typing import List, Collection, Union, Any, Tuple, Dict, Optional
 
 
 def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1)) -> glm.mat4:
@@ -178,44 +178,39 @@ class VertexAttribute:
     divisor: GLsizei = 0
 
     def __post_init__(self):
+        if isinstance(self.data, np.ndarray):
+            self.data = list(self.data)
         if not isinstance(self.data, List):
             self.data = [self.data]
 
-        self._num_components = 1
+        self._component_count = 1
         self._elem_count = 1
         data_point: Union[Any, Collection[Any]] = self.data[0]
         if isinstance(data_point, Collection):  # Indicates Vector or Matrix
             self._elem_count = len(data_point)
             data_point = data_point[0]
             if isinstance(data_point, Collection):  # Indicates this is a Matrix
-                self._num_components, self._elem_count = self._elem_count, len(data_point)
+                self._component_count, self._elem_count = self._elem_count, len(data_point)
                 data_point = data_point[0]
                 if isinstance(data_point, Collection):
                     raise TypeError("Maximum Vertex Attribute Depth is 2 for Matrix (WxH)")
-        self.num_elements = self._num_components * self._elem_count
+        self.num_elements = self._component_count * self._elem_count
 
         self.gl_type: GLenum = None
         self.dtype: np.dtype = None
         elem_size: int = 4  # int32 and float32 are 4 bytes in size
-        if isinstance(data_point, int):
+        if isinstance(data_point, (int, np.int32)):
             self.gl_type = GL_INT
             self.dtype = np.int32
-        elif isinstance(data_point, float):
+        elif isinstance(data_point, (float, np.float32)):
             self.gl_type = GL_FLOAT
             self.dtype = np.float32
         else:
-            raise TypeError("Only Base Data Types of int or float are allowed")
+            raise TypeError("Only Base Data Types of int/np.int32 or float/np.float32 are allowed")
 
         self.data = np.array(self.data, dtype=self.dtype)
         self.base_size: int = elem_size * self.num_elements
-
-    @property
-    def bytes(self) -> bytes:
-        return self.data.tobytes()
-
-    @property
-    def num_bytes(self) -> int:
-        return self.data.nbytes
+        self._component_size = self.base_size // self._component_count
 
     @property
     def size(self):
@@ -223,12 +218,13 @@ class VertexAttribute:
 
     def set_attribute_pointer(self, start_index: GLsizei, stride: GLsizei, pointer: GLsizei,
                               print_attribute=False) -> int:
-        for i in range(self._num_components):
+        for i in range(self._component_count):
+            if stride == 0 and self._component_count > 1:
+                stride = self.base_size
             attr_index = start_index + i
             glEnableVertexAttribArray(attr_index)
 
-            component_bytes = (self.num_bytes // self.num_elements) * self._elem_count
-            component_pointer = pointer + component_bytes * i
+            component_pointer = pointer + self._component_size * i
 
             if self.gl_type in (GL_INT, GL_UNSIGNED_INT, GL_SHORT, GL_UNSIGNED_SHORT):
                 glVertexAttribIPointer(attr_index, self._elem_count, self.gl_type, stride,
@@ -239,7 +235,7 @@ class VertexAttribute:
             glVertexAttribDivisor(attr_index, self.divisor)
             if print_attribute:
                 print(
-                    f"Pointer Set:\t{{index: {attr_index} | elements: {self._num_components} | bytes: {component_bytes} | dtype: {self.gl_type} | normalized: {self.normalized} | stride: {stride} | offset: {component_pointer} | divisor: {self.divisor}}}")
+                    f"Pointer Set: {self.name}{('['+str(i)+']') if self._component_count > 1 else ''}:\t{{index: {attr_index} | elements: {self._elem_count} | bytes: {self._component_size} | dtype: {self.gl_type} | normalized: {self.normalized} | stride: {stride} | offset: {component_pointer} | divisor: {self.divisor}}}")
         return attr_index + 1
 
 
@@ -248,43 +244,63 @@ class DataLayout:
     attributes: List[VertexAttribute]
 
     def __post_init__(self):
+        self._divisors: List[int] = []
         self._strides: Dict[int, int] = {}
         self._pointers: Dict[int, int] = {}
         self._attributes: Dict[int, List[VertexAttribute]] = {}
-        self._bytes: Dict[int, Dict[GLenum, bytes]] = {}
+        self._dtypes: Dict[int, List] = {}
         for attribute in self.attributes:
-            div = attribute.divisor
-            if div not in self._strides.keys():
-                self._strides[div] = 0
-                self._pointers[div] = 0
-                self._attributes[div] = []
-                self._bytes[div] = {}
+            divisor = attribute.divisor
+            if divisor not in self._divisors:
+                self._divisors.append(divisor)
+                self._strides[divisor] = 0
+                self._pointers[divisor] = 0
+                self._attributes[divisor] = []
+                self._dtypes[divisor] = []
             else:
-                if self._strides[div] == 0:
-                    self._strides[div] += self._attributes[div][-1].base_size
-                self._strides[div] += attribute.base_size
-            self._attributes[div].append(attribute)
-            if attribute.gl_type not in self._bytes[div]:
-                self._bytes[div][attribute.gl_type] = attribute.bytes
-            else:
-                self._bytes[div][attribute.gl_type] += attribute.bytes
+                if self._strides[divisor] == 0:
+                    self._strides[divisor] += self._attributes[divisor][-1].base_size
+                self._strides[divisor] += attribute.base_size
+            self._attributes[divisor].append(attribute)
+
+            self._dtypes[divisor].append((
+                attribute.name,
+                attribute.dtype,
+                attribute._elem_count
+                if not attribute._component_count -1 else (
+                    attribute._component_count,
+                    attribute._elem_count
+                )
+            ))
 
 
     def set_pointers(self, print_attributes=False):
         index: int = 0
-        for divisor in sorted(self._strides.keys()):
+        for i, divisor in enumerate(self._divisors):
+            division_size: int = 0
             for attribute in self._attributes[divisor]:
                 index = attribute.set_attribute_pointer(
                     index, self._strides[divisor], self._pointers[divisor], print_attributes
                 )
+                self._pointers[divisor] += attribute.base_size
+                division_size += attribute.base_size
+            division_size *= self._attributes[divisor][0].size
+            if i != len(self._divisors) - 1:
+                self._pointers[self._divisors[i+1]] = division_size
 
-    def get_data(self) -> List[Tuple[GLenum, int, bytes]]:
-        data: List[Tuple[GLenum, int, bytes]] = []
+    def get_data(self) -> bytes:
+        data: Optional[bytes] = None
         offset: int = 0
-        for div in sorted(self._bytes.keys()):
-            for dtype in self._bytes[div].keys():
-                data.append((dtype, offset, self._bytes[div][dtype]))
-                offset += len(self._bytes[div][dtype])
+        for divisor in self._divisors:
+            vertex_dtype = np.dtype(self._dtypes[divisor])
+            vertex_data = np.zeros(self._attributes[divisor][0].size, dtype=vertex_dtype)
+            for attribute in self._attributes[divisor]:
+                vertex_data[attribute.name] = attribute.data
+            if data is None:
+                data = vertex_data.tobytes()
+            else:
+                data += vertex_data.tobytes()
+            offset += vertex_data.nbytes
         return data
 
 
@@ -347,8 +363,10 @@ class VertexArray:
 
         # Bind the VBO
         buffer.bind()
-        buffer.allocate(np.sum([attr.num_bytes for attr in layout.attributes]))
-        [buffer.buffer_sub_data(*data[1:]) for data in layout.get_data()]
+        data = layout.get_data()
+        # buffer.allocate(np.sum([attr.num_bytes for attr in layout.attributes]))
+        #[buffer.buffer_sub_data(*data[1:]) for data in None]
+        buffer.buffer_data(data)
         try:
             # Set vertex attribute pointers
             layout.set_pointers(print_buffer)

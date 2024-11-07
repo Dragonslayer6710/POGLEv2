@@ -55,6 +55,8 @@ class UniformBlockLayout(DataLayout):
 
 
 UBL = UniformBlockLayout
+
+
 #
 # defaultUniformBlockLayout = UBL("ub_Matrices", [
 #     VA.Float.Mat4(aName="uProjection"),  # Projection Matrix
@@ -70,36 +72,72 @@ class UniformBlock:
 
     def __init__(self, create_key, layout: UBL):
         self.layout: layout = layout
-        self.data: np.ndarray | None = None
-        self.bytes: int | None = None
-        #self.setData(layout.get_data())
+        self.data: Optional[bytes] = None
+        self.bytes: Optional[int] = None
+        self.set_data(layout.attributes)
         assert (create_key == UniformBlock.__create_key), \
             "UniformBlock objects must be created using UniformBlock.create"
 
         self.binding: int = UniformBlock.next_block_binding()
         UniformBlock._UBCache[self.name]: UniformBlock = self
 
-    def setData(self, dataElements):
-        self.data = []
-        self.bytes = 0
-        for i in range(len(dataElements)):
-            dataElement = dataElements[i]
-            vertAttrib = self.layout.attributes[i]
+    def _pad_data(self, data: Collection) -> np.ndarray:
+        if isinstance(data[0], Collection):  # If this is a 3D array
+            raise TypeError("UniformBlock accepts a maximum depth of 2")
+        if len(data) < 4:  # Pad with 0s if necessary
+            data = *data , *((0,) * (4 - len(data)))
+        return np.array(data, dtype=type(data[0]))
 
-            self.bytes += vertAttrib.num_bytes
-            #dtype = _typeDict[vertAttrib.dtype]
-            # Check the type and handle padding if it's a vec2
-            if isinstance(dataElement, glm.vec2):
-                padded_element = np.array([dataElement.x, dataElement.y, 0.0, 0.0], np.float32)
-                self.data = np.concatenate((self.data, padded_element.flatten()), dtype=np.float32)
-            elif isinstance(dataElement, glm.mat4):
-                # Handle mat4 elements (reshape and transpose as in std140 layout)
-                dataElement = np.array(dataElement, np.float32).reshape(4, 4).T
-                self.data = np.concatenate((self.data, dataElement.flatten()), dtype=np.float32)
-            else:
-                # Default case for other types
-                dataElement = np.array(dataElement, np.float32)
-                self.data = np.concatenate((self.data, dataElement.flatten()), dtype=np.float32)
+    def _process_2d_array(self, data: Collection) -> np.ndarray:
+        temp_data = []
+        for sub_data in data:
+            if len(sub_data) < 4:  # Pad with 0s if necessary
+                print()
+            sub_data = self._pad_data(sub_data)
+            temp_data = np.concatenate((temp_data, sub_data), dtype=sub_data.dtype)
+        return temp_data
+
+    def _process_array(self, data: Collection) -> np.ndarray:
+        if isinstance(data[0], np.ndarray):  # If this is a 2D array
+            return self._process_2d_array(data)
+        else:  # If this is a 1D array
+            return self._pad_data(data)
+
+    def set_data(self, data: Union[List[Any], bytes]):
+        self.data = []
+        if isinstance(data, bytes):  # Direct bytes
+            self.data = data
+            return
+        elif isinstance(data, List):  # List of Data Points
+            for data_point in data:
+                if isinstance(data_point, VertexAttribute):
+                    # Data Point is a Vertex Attribute
+                    # Get the numpy array from the Data Point
+                    np_data: np.ndarray = data_point.data
+                    data_point = np.concatenate([
+                        self._process_array(np_data[i]) for i in range(np_data.shape[0])
+                    ]) if len(np_data.shape) == 3 else self._process_array(np_data)
+                elif isinstance(data_point, Collection):
+                    # Data Points is a Collection of values (an array of ints/floats/vecs/mats)
+                    if isinstance(data_point, np.ndarray):
+                        data_point = self._process_array(np_data)  # Process the array
+                    elif isinstance(data_point, (glm.vec2, glm.vec3, glm.vec4, glm.mat2, glm.mat3, glm.mat4)):
+                        if isinstance(data_point, (glm.mat2, glm.mat3, glm.mat4)):
+                            data_point = np.array(data_point, np.float32).T
+                        data_point = self._process_array(data_point)
+                    elif isinstance(data_point, (glm.ivec2, glm.ivec3, glm.ivec4, glm.imat2, glm.imat3, glm.imat4)):
+                        if isinstance(data_point, (glm.imat2, glm.imat3, glm.imat4)):
+                            data_point = np.array(data_point, np.int32).T
+                        data_point = self._process_array(data_point)
+                    elif isinstance(data_point, (int, np.int32, float, np.float32)):
+                        data_point = self._pad_data(data_point)
+                    else:
+                        raise TypeError(f"Invalid data type: {type(data_point)}")
+                self.data = np.concatenate((self.data, data_point.flatten()), dtype=data_point.dtype)
+            self.bytes = self.data.nbytes
+            self.data = self.data.tobytes()
+            return
+        raise TypeError(f"Invalid data type: {type(data)}")
 
     @classmethod
     def create(cls, layout: UBL):
