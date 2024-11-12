@@ -1,6 +1,5 @@
 import numpy as np
 
-from MineClone.Block import BlockShape
 from POGLE.Shader import *
 from POGLE.Geometry.Texture import *
 from POGLE.Geometry.Shape import *
@@ -123,39 +122,3 @@ class TexQuadMesh(ShapeMesh):
     def __init__(self, shader: ShaderProgram, tex_uvs: Optional[Union[glm.vec3, List[glm.vec3]]] = None,
                  alphas: Optional[Union[float, List[float]]] = None, quad_model_mats: Optional[List[glm.mat4]] = None):
         super().__init__(ColQuad(tex_uvs, alphas, quad_model_mats), shader)
-
-
-class BlockMesh(Mesh):
-    def __init__(self, block_model_mats: Union[glm.mat4, List[glm.mat4]],
-                 block_face_shape: BlockShape, shader: ShaderProgram,
-                 textures: Optional[Dict[str, Texture]] = None):
-        super().__init__(
-            block_face_shape.vertices, block_face_shape.vertex_layout, block_face_shape.indices, shader,
-            textures=textures
-        )
-        model_mats: np.ndarray = None
-        if isinstance(block_model_mats, glm.mat4):
-            block_model_mats = [block_model_mats]
-        elif not isinstance(block_model_mats, List):
-            raise TypeError("Block Model Mats should be of type glm.mat4 or List")
-        if isinstance(block_model_mats[0], glm.mat4):
-            model_mats = np.array(
-                [
-                    np.array(block_model_mat, np.float32).reshape(4, 4).T
-                    for block_model_mat in block_model_mats
-                ],
-                np.float32
-            ).flatten()
-        else:
-            raise TypeError("Block Model Mats should be a list of glm.mat4s")
-
-        self.set_instance_buffers(
-            [
-                model_mats,
-                block_face_shape.instances
-            ],
-            [
-                DataLayout([VA.Float.Mat4("a_Model", divisor=1)]),
-                block_face_shape.instance_layout
-            ]
-        )

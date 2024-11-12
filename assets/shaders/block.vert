@@ -42,13 +42,28 @@ layout (std140) uniform ub_FaceTexSizes
 void main(){
     // Finally, apply the view and projection transformations.
     // gl_Position = vec4(a_Position, 1.0);
-    if ((-1 < a_FaceID) && (a_FaceID < 6)) {
-        gl_Position = u_Projection * u_View * vec4(a_Position, 1.0);
+    mat4 face_transform;
+    face_transform = a_Model * u_FaceTransforms[a_FaceID];
+    /**face_transform = mat4(
+        5.96046e-08, 0, -1, 0,
+        0,  1,  0, 0,
+        1,  0, 5.96046e-08, 0,
+        -1, 0,  0, 1
+    );
+    face_transform = a_Model;*/
+
+    vec2 tex_size;
+    tex_size = u_TexSizes[a_FaceTexSizeID];
+    vec2 tex_pos;
+    tex_pos = u_TexPositions[a_FaceTexID];
+
+    if ((-1 < a_FaceTexID) && (a_FaceTexID < NUM_SUB_TEXTURES)) {
+        gl_Position = u_Projection * u_View * face_transform * vec4(a_Position, 1.0);
         vTexUV = a_TexUV;
         if (USE_SIZES)
-            vTexUV *= u_TexSizes[0];
+            vTexUV *= tex_size;
         if (USE_SUB_TEXTURES)
-            vTexUV +=u_TexPositions[1];
+            vTexUV += tex_pos;
     }
     else {
         gl_Position = vec4(0);

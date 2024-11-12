@@ -15,8 +15,7 @@ window = glfw.create_window(800, 600, "Face Test", None, None)
 glfw.make_context_current(window)
 initFaceTextureAtlas()
 
-from Chunk import *
-from Chunk import _Region
+from World import *
 from Block import _face_model_mats, _faceTextureAtlas
 import math
 
@@ -52,20 +51,22 @@ current_y_angle = 0.0  # Current rotation angle for y-axis motion
 def _main():
     global current_angle, current_y_angle
 
-    # world = World()#World.from_file()
-    chunk = Chunk()
-    r = _Region()
-    chunk.initialize(r)
+    world = World()#World.from_file()
+    #chunk = Chunk()
+    #r = _Region()
+    #r.pos += glm.vec3(0, CHUNK.HEIGHT // 2, 0)
+    #chunk.initialize(r)
+    #chunk.update()
+
     # r.update()
 
-    bfs = chunk.get_shape()
+    bfs = world.spawn_region.get_shape()
 
     shader = ShaderProgram("block", "block")
 
     # Define the perspective projection and view matrix
     from POGLE.Renderer.Camera import Camera
     camera = Camera(zFar=1000)
-    camera.Position = glm.vec3(0, 0, 5)
     vao = VertexArray()
     vao.set_ebo(data=np.array(Quad._indices, dtype=np.ushort))
     vao.add_vbo(bfs)
@@ -86,6 +87,8 @@ def _main():
     glEnable(GL_DEPTH_TEST)
 
     projection = camera.get_projection()  # glm.perspective(glm.radians(45.0), 800 / 600, 0.1, 100.0)
+    camera.Position = glm.vec3(8, 24, 9)
+    camera.Pitch = -90
     view = camera.GetViewMatrix()
     ubo_mats = UniformBuffer()
     ub_mats = UniformBlock.create(UniformBlockLayout(
@@ -107,7 +110,7 @@ def _main():
         UniformBlockLayout(
             "ub_FaceTransforms",
             [
-                VertexAttribute("u_FaceTransform", list(_face_model_mats.values()))
+                VertexAttribute("u_FaceTransform", [np.array(mat.to_list()) for mat in _face_model_mats.values()])
             ]
         )
     )
@@ -172,6 +175,8 @@ def _main():
     previous_time = glfw.get_time()
     old_x, old_y = 0, 0
     track_cursor = False
+    camera.ProcessMouseMovement(0,0, True)
+
     # glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
     while not glfw.window_should_close(window):
         # Clear the color buffer

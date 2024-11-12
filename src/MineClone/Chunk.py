@@ -7,9 +7,9 @@ from io import BytesIO
 import zlib
 
 from glm import float32
-from perlin_noise import PerlinNoise
 
-noise = PerlinNoise(octaves=4, seed=99)
+import math
+import random
 
 import os.path
 import pickle
@@ -29,36 +29,6 @@ if TYPE_CHECKING:
     from Region import Region
 
 from POGLE.Physics.SpatialTree import Octree
-
-CHUNK_BLOCK_WIDTH = 2
-
-_CHUNK_BLOCK_HORIZONTAL_ID_RANGE = range(CHUNK_BLOCK_WIDTH)
-
-CHUNK_BLOCK_HEIGHT = 2
-_CHUNK_BLOCK_VERTICAL_ID_RANGE = range(CHUNK_BLOCK_HEIGHT)
-
-CHUNK_BLOCK_EXTENTS = glm.vec3(CHUNK_BLOCK_WIDTH, CHUNK_BLOCK_HEIGHT, CHUNK_BLOCK_WIDTH)
-
-CHUNK_NUM_BLOCKS = int(np.prod(CHUNK_BLOCK_EXTENTS))
-CHUNK_BLOCK_NONE_LIST = [None] * CHUNK_NUM_BLOCKS
-_CHUNK_BLOCK_ID_RANGE = range(CHUNK_NUM_BLOCKS)
-
-SECTION_NUM_BLOCKS: int = CHUNK_BLOCK_WIDTH ** 2
-SECTION_BLOCK_RANGE: range = range(SECTION_NUM_BLOCKS)
-SECTION_STARTS: List[int] = [y * SECTION_NUM_BLOCKS for y in _CHUNK_BLOCK_VERTICAL_ID_RANGE]
-SECTION_ENDS: List[int] = [SECTION_STARTS[y] + SECTION_NUM_BLOCKS for y in _CHUNK_BLOCK_VERTICAL_ID_RANGE]
-
-SECTION_NUM_BIOMES = 1
-CHUNK_NUM_BIOMES = SECTION_NUM_BIOMES * CHUNK_BLOCK_HEIGHT
-CHUNK_BIOME_NONE_LIST = [None] * CHUNK_NUM_BIOMES
-
-_CHUNK_NULL_HEIGHT_MAP: List[int] = [0] * int(CHUNK_NUM_BLOCKS / CHUNK_BLOCK_HEIGHT)
-
-CHUNK_BASE_AABB = AABB.from_pos_size(size=CHUNK_BLOCK_EXTENTS)
-
-_BLOCK_MASKS = tuple(1 << i for i in _CHUNK_BLOCK_ID_RANGE)
-
-CHUNK_LOWEST_Y = 0
 
 
 def block_state_compound(blocks: List[Block]) -> nbtlib.Compound:
@@ -122,21 +92,39 @@ def _decompress_chunk_data(compressed_data, compression_type):
     raise ValueError("Unknown compression type reference provided")
 
 
-NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK_NUM_BLOCKS, dtype=np.ndarray)
+NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
 @dataclass
-class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
-    blocks: Tuple[Block, ...] = field(default_factory=lambda: [Block(i) for i in _CHUNK_BLOCK_ID_RANGE])
+class Chunk(MCPhys, aabb=CHUNK.AABB):
+    blocks: Tuple[Tuple[Tuple[Block, ...], ...], ...] = field(
+        default_factory=lambda: tuple(
+            tuple(
+                tuple(
+                    Block(glm.ivec3(y, z, x)) for x in CHUNK.WIDTH_RANGE
+                ) for z in CHUNK.WIDTH_RANGE
+            ) for y in CHUNK.HEIGHT_RANGE
+        )
+    )
     entities: List[Entity] = field(default_factory=list)
     tile_entities: List[TileEntity] = field(default_factory=list)
-    height_map: List[int] = field(default_factory=lambda: copy(_CHUNK_NULL_HEIGHT_MAP))
-    biome_data: Tuple[Biome] = field(default_factory=lambda: [None for _ in range(CHUNK_NUM_BIOMES)])
+    height_map: List[List[int]] = field(default_factory=lambda: copy(CHUNK.NULL_HEIGHT_MAP))
+    biome_data: Tuple[Tuple[Block, ...], ...] = field(
+        default_factory=lambda:
+        tuple(
+            tuple(
+                None for x in CHUNK.WIDTH_RANGE
+            ) for z in CHUNK.WIDTH_RANGE
+        )
+    )
 
     _from_nbt: bool = False
     timestamp: Optional[int] = 0
     region: Optional[Region] = None
 
     def __post_init__(self):
+        if self.index == 0:
+            self.index = glm.ivec2((REGION.WIDTH + 1) // 2)
         super().__post_init__()
+        self.chunk_seed: Optional[int] = None
         self.initialized: bool = False
 
         self._renderable_dict: Dict[int, Block] = {}
@@ -149,6 +137,7 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
         self.last_update: int = 0
 
         self._update_deque: deque[Block] = deque()
+        self._updated_deque: deque[Block] = deque()
         self._awaiting_update: bool = False
 
         self.initialized: bool = False
@@ -157,75 +146,85 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
         self.block_face_tex_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
         self.block_face_tex_size_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
 
-        self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK_NUM_BLOCKS,), dtype=np.ndarray)
+        self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK.NUM_BLOCKS,), dtype=np.ndarray)
 
         if self.region:
             self.initialize()
 
-    @staticmethod
-    def generate_height(x: float, z: float, scale: float = 100) -> int:
-        # Normalize the noise output to the range [0, 1]
-        noise_value = noise([x / scale, z / scale])
-        normalized_height = (noise_value + 1) / 2  # Normalize to [0, 1]
+    def generate_height(self, x: float, z: float) -> int:
+        """
+        Generate a height value based on Perlin noise.
 
-        # Scale the height to the range [0, CHUNK_BLOCK_HEIGHT - 1]
-        height = int(normalized_height * (CHUNK_BLOCK_HEIGHT - 1))
+        This function mimics Minecraft's terrain generation by using Perlin noise
+        to generate heightmaps for terrain at specific coordinates (x, z).
+
+        Args:
+            x (float): The world coordinate x.
+            z (float): The world coordinate z.
+
+        Returns:
+            int: The generated height at the (x, z) coordinate.
+        """
+        # Base height generation using Perlin noise
+        base_height = noise([x / 100.0, z / 100.0]) * 40  # Scale the noise (height variation)
+        base_height = int(base_height + WORLD.SURFACE_HEIGHT)  # Adjust for sea level
+
+        # Add biome variation (this is a simplistic way to emulate biome diversity)
+        biome_variation = noise([x / 200.0, z / 200.0]) * WORLD.BIOME_VARIATION
+
+        # Combine the noise-generated height and biome variation
+        height = base_height + int(biome_variation)
+
+        # Clamp the height to within chunk bounds
+        height = max(0, min(CHUNK.HEIGHT - 1, height))
+
         return height
-
-    def _get_zx_offset(self, x: int, z: int) -> int:
-        return (z * CHUNK_BLOCK_WIDTH) + x
-
-    def _get_block_id(self, x: int, y: int, z: Optional[int] = None):
-        if z is None:
-            zx_offset = x
-        else:
-            zx_offset = self._get_zx_offset(x, z)
-        return (y * CHUNK_BLOCK_WIDTH ** 2) + zx_offset
 
     def initialize(self, region: Optional[Region] = None):
         if region:
             if self.region:
                 raise RuntimeError("Attempted to set region of a chunk already set in a region")
             self.region = region
-        self.pos += self.region.pos
-        self.pos -= CHUNK_BLOCK_EXTENTS / 2
-        if self._from_nbt:
-            for block in self.blocks:
-                self.block_face_ids[block.index] = block.face_ids
-                self.block_face_tex_ids[block.index] = block.face_tex_ids
-                self.block_face_tex_size_ids[block.index] = block.face_tex_sizes
-                block.initialize(self)
-                self.block_instances[block.index] = NMM(block.pos)
-        else:
-            cnt = 0
-            for z in _CHUNK_BLOCK_HORIZONTAL_ID_RANGE:
-                for x in _CHUNK_BLOCK_HORIZONTAL_ID_RANGE:
-                    height = Chunk.generate_height(self.pos.x + x, self.pos.z + z)
-                    zx_offset = self._get_zx_offset(x, z)
-                    self.height_map[zx_offset] = height
-                    for y in _CHUNK_BLOCK_VERTICAL_ID_RANGE:
-                        yzx_offset = self._get_block_id(zx_offset, y)
-                        block: Block = self.blocks[yzx_offset]
+
+        offset_xz = REGION.CHUNK_OFFSETS[self.index[1]][self.index[0]]
+        self.pos = self.region.pos.xyz + glm.vec3(offset_xz[0], 0, offset_xz[1])
+        self.pos -= CHUNK.EXTENTS_HALF
+        if not self._from_nbt:
+            self.height_map: np.ndarray = generate_chunk_noise(
+                self.region.region_noise_map,
+                self.index,
+                self.pos
+            )
+        for y, section in enumerate(self.blocks):
+            y_index = y * CHUNK.SECTION_NUM_BLOCKS
+            for z, yz_plane in enumerate(section):
+                z_index = z * CHUNK.WIDTH
+                for x, block in enumerate(yz_plane):
+                    index: int  = y_index + z_index + x
+                    if not self._from_nbt:
+                        height = self.height_map[z][x]
+                        print(height)
+                        if height is None:
+                            height = self.height_map[z][x] = self.generate_height(self.pos.x + x, self.pos.z + z)
                         if y <= height:
-                            if y < height - 5:
+                            if y < height - 4:
                                 block.set(BlockID.Stone)
-                            elif y < height - 1:
+                            elif y < height:
                                 block.set(BlockID.Dirt)
                             else:
                                 block.set(BlockID.Grass)
-                            cnt+=1
-                        self.block_face_ids[block.index] = block.face_ids
-                        self.block_face_tex_ids[block.index] = block.face_tex_ids
-                        self.block_face_tex_size_ids[block.index] = block.face_tex_sizes
-                        block.pos += glm.vec3(x,y,z)
-                        block.initialize(self)
-                        self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
-            print(CHUNK_NUM_BLOCKS)
-            print(cnt)
+
+                    self.block_face_ids[index] = block.face_ids
+                    self.block_face_tex_ids[index] = block.face_tex_ids
+                    self.block_face_tex_size_ids[index] = block.face_tex_sizes
+                    block.pos += glm.vec3(x, y, z)
+                    block.initialize(self)
+                    self.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
+                    #self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
             #quit()
                     #if z == 1 and x == 1:
                     #    quit()
-        self.pos += CHUNK_BLOCK_EXTENTS / 2
+        self.pos += CHUNK.EXTENTS_HALF
 
         self.enqueue_update()
         self.initialized = True
@@ -243,68 +242,42 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
         self.region.stack_chunk(self)
 
     def enqueue_block(self, block: Block):
-        self._update_deque.append(block)
+        if not block in self._updated_deque:
+            self._update_deque.append(block)
 
     def stack_block(self, block: Block):
-        self._update_deque.appendleft(block)
+        if not block in self._updated_deque:
+            self._update_deque.appendleft(block)
 
     def update(self):
         if not self._awaiting_update:
             return  # Shouldn't be possible
+        total_updates = len(self._update_deque)
+        cnt = 1
+        print(f"Chunk ({self.index.x}, {self.index.y}) has {total_updates} blocks to update")
         while self._update_deque:
             block = self._update_deque.popleft()
             block.update()
-            self.update_block_in_lists(block)
+            self._updated_deque.append(block)
+            # if not cnt % 16:
+            #     print(
+            #         f"Chunk ({self.index.x}, {self.index.y}) Updated: {cnt}/{total_updates} Blocks!\nCurrent Queue Length: {len(self._update_deque)}")
+            # cnt += 1
+        self._updated_deque.clear()
         self._awaiting_update = False
 
-    def _is_block_renderable(self, block: Block):
-        return self._renderable_bitmask & _BLOCK_MASKS[block.index]
-
-    def _block_is_renderable(self, block: Block):
-        if not self._is_block_renderable(block):  # Check if Block was not renderable
-            self._renderable_dict[block.index] = block
-            self._renderable_bitmask |= _BLOCK_MASKS[block.index]
-            self._renderable_cache_valid = False
-
-    def _block_is_not_renderable(self, block: Block):
-        if self._is_block_renderable(block):  # Check if Block was renderable
-            self._renderable_dict.pop(block.index)
-            self._renderable_bitmask &= ~_BLOCK_MASKS[block.index]
-            self._renderable_cache_valid = False
-
-    def update_block_in_lists(self, block: Block):
-        if block.is_renderable:
-            self._block_is_renderable(block)
-        else:
-            self._block_is_not_renderable(block)
-
-    def _validate_renderable_cache(self):
-        self._renderable_list_cache = self._renderable_dict.values()
-        self._num_renderable_cache = len(self._renderable_list_cache)
-        self._renderable_cache_valid = True
-
-    @property
-    def renderable_blocks(self):
-        if not self._renderable_cache_valid:
-            self._validate_renderable_cache()
-        return self._renderable_list_cache
-
-    @property
-    def num_renderable_blocks(self):
-        if not self._renderable_cache_valid:
-            self._validate_renderable_cache()
-        return self._num_renderable_cache
-
-    @property
-    def is_renderable(self) -> bool:
-        return bool(self._num_renderable_cache)
-
     def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
-        if self.bounds.intersectPoint(block_pos):
-            local_pos = [int(i) for i in block_pos - self.pos]
-            return self.blocks[self._get_block_id(*local_pos)]
+        #if block_pos == glm.vec3(0.5,          0.5,        -15.5):
+        #print(block_pos)
+        if self.bounds.intersect_point(block_pos):
+            local_pos = w_to_cb(block_pos)
+            block = self.blocks[local_pos.y][local_pos.z][local_pos.x]
         else:
-            return self.region.get_block(block_pos)
+            block = self.region.get_block(block_pos)
+        if block is not None:
+            if block_pos != block.pos:
+                raise Exception("Wrong Block!")
+        return block
 
     def to_nbt(self) -> nbtlib.Compound:
         return nbtlib.Compound({
@@ -312,7 +285,7 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
             "DataVersion": nbtlib.Int(1),
             "xPos": nbtlib.Int(self.pos.x),  # x position of chunk in chunks not relative to region
             "zPos": nbtlib.Int(self.pos.z),  # z position of chunk in chunks not relative to region
-            "yPos": nbtlib.Int(CHUNK_LOWEST_Y),  # lowest Y section position in the chunk
+            "yPos": nbtlib.Int(CHUNK.LOWEST_Y),  # lowest Y section position in the chunk
             "Status": nbtlib.String(self.status),
             "LastUpdate": nbtlib.Long(self.last_update),
             "sections": nbtlib.List(
@@ -320,14 +293,14 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
                     nbtlib.Compound({
                         "Y": nbtlib.Byte(y - 128),
                         "block_states": block_state_compound(
-                            self.blocks[y * SECTION_NUM_BLOCKS: y * SECTION_NUM_BLOCKS + SECTION_NUM_BLOCKS]
+                            self.blocks[y * CHUNK.SECTION_NUM_BLOCKS: y * CHUNK.SECTION_NUM_BLOCKS + CHUNK.SECTION_NUM_BLOCKS]
                         ),
                         # "biomes": biome_compound(
                         #    None#self.blocks[y * SECTION_NUM_BIOMES: y * SECTION_NUM_BIOMES + SECTION_NUM_BIOMES]
                         # ),
                         "BlockLight": nbtlib.ByteArray(length=2048),
                         "SkyLight": nbtlib.ByteArray(length=2048),
-                    }) for y in range(CHUNK_BLOCK_HEIGHT)
+                    }) for y in range(CHUNK.HEIGHT)
                 ]
             ),
             "block_entities": nbtlib.List(
@@ -378,7 +351,7 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
     @classmethod
     def from_nbt(cls, nbt_data: nbtlib.Compound) -> Chunk:
         blocks = []
-        section_block_range = SECTION_BLOCK_RANGE  # Cache SECTION_BLOCK_RANGE
+        section_block_range = CHUNK.SECTION_BLOCK_RANGE  # Cache SECTION_BLOCK_RANGE
         _Block = Block  # Cache Block class
         block_in_chunk_index = 0
         for section in nbt_data["sections"]:
@@ -412,7 +385,7 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
             # })
 
         chunk = Chunk(int(nbt_data["index"]), blocks, _from_nbt=True)
-        chunk.pos = glm.vec3(nbt_data["xPos"], CHUNK_BLOCK_HEIGHT / 2,
+        chunk.pos = glm.vec3(nbt_data["xPos"], CHUNK.EXTENTS_HALF.y,
                              nbt_data["zPos"])  # Assuming Position is a class that holds x and z
         chunk.status = nbt_data["Status"]
         chunk.last_update = nbt_data["LastUpdate"]
@@ -487,13 +460,9 @@ class Chunk(MCPhys, aabb=CHUNK_BASE_AABB):
                 VertexAttribute("a_FaceTexSizeID", np.concatenate(self.block_face_tex_size_ids), divisor=1),
             ]
         )
-        return BlockShape(
-            self.block_instances,
-            self.block_face_instances
-        )
 
-class _Region:
-    pos: glm.vec3 = glm.vec3()
+
+class _Region(MCPhys, aabb=REGION.AABB):
     chunks: List[Chunk] = []
     def enqueue_chunk(self, chunk: Chunk):
         self.chunks.append(chunk)

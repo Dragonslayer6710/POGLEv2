@@ -140,10 +140,14 @@ class AABB(Collider):
 
     @classmethod
     def from_pos_size(cls, pos: Union[glm.vec2, glm.vec3] = glm.vec3(), size: Optional[Union[glm.vec2, glm.vec3]] = glm.vec3(1)):
-        if isinstance(pos, glm.vec2):
+        if isinstance(pos, (glm.ivec2, glm.vec2)):
             pos = glm.vec3(pos[0], 0, pos[1])
-        if isinstance(size, glm.vec2):
+        elif isinstance(pos, glm.ivec3):
+            pos = glm.vec3(pos)
+        if isinstance(size, (glm.ivec2, glm.vec2)):
             size = glm.vec3(size[0], 0, size[1])
+        elif isinstance(size, glm.ivec3):
+            size = glm.vec3(size)
         return cls._new(pos, size)
 
     @property
@@ -159,10 +163,10 @@ class AABB(Collider):
         return self.pos + self.half
 
     def does_overlap(self, overlap: glm.vec3) -> bool:
-        return overlap.x > 0 and overlap.y > 0 and overlap.z > 0
+        return overlap.x >= 0 and overlap.y >= 0 and overlap.z >= 0
 
     # Example of the intersectPoint method with comments
-    def intersectPoint(self, point: glm.vec3) -> Hit:
+    def intersect_point(self, point: glm.vec3) -> Hit:
         # Calculate the vector difference between the centers of the AABB and the point
         delta = point - self.pos
 
@@ -172,7 +176,6 @@ class AABB(Collider):
         # Calculate the overlap on each axis by subtracting the absolute distance
         # from the half-extents of the AABB
         overlap = self.half - glm.abs(delta)
-
         # Check if there is an intersection by verifying if all components of `overlap` are positive
         if self.does_overlap(overlap):
             hit = Hit(self)

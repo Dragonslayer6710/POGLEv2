@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 from dataclasses import dataclass, field
 
+from Constants import *
+
 import glm
 
 from POGLE.Geometry.Data import NMM
@@ -144,10 +146,9 @@ _FACE_MASKS = tuple(1 << i for i in range(6))
 
 import uuid
 
-
 @dataclass
 class MCPhys(PhysicalBox):
-    index: int = 0
+    index: Union[int, glm.ivec2, glm.ivec3] = 0
 
     def __post_init__(self):
         self._id = MCPhys.index  # uuid.uuid4()  # Generate a unique UUID for this instance
@@ -177,6 +178,8 @@ _face_model_mats: Dict[Side, glm.mat4] = {
 BLOCK_FACE_IDS = np.array([i for i in range(6)], dtype=np.int32)
 NULL_BLOCK_FACE_TEX_IDS = np.array([FaceTexID.Null for i in range(6)], dtype=np.int32)
 FULL_BLOCK_FACE_TEX_SIZE_IDS = np.array([FaceTexSizeID.Full for i in range(6)], dtype=np.int32)
+
+DO_FACE_HIDING = True
 
 @dataclass
 class Block(MCPhys, aabb=BLOCK_BASE_AABB):
@@ -216,9 +219,13 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             if self.chunk:
                 raise RuntimeError("Attempted to set chunk of a block already set in a chunk")
             self.chunk = chunk
-        self.pos += self.chunk.pos
-
-        self.enqueue_update()
+        self.pos += self.chunk.pos + glm.vec3(0.5)
+        if DO_FACE_HIDING:
+            if self.block_id == BlockID.Air or any(
+                    index_part == 0 or index_part == CHUNK.WIDTH - 1 for index_part in self.index):
+                self.enqueue_update()
+        else:
+            self.enqueue_update()
         self.initialized = True
 
     def enqueue_update(self):
@@ -234,7 +241,9 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         self.chunk.stack_block(self)
 
     def neighbour(self, side: Union[int, Side]) -> Optional[Block]:
-        return self.chunk.get_block(self.pos + _neighbour_offset[side])
+        offset: glm.vec3 = _neighbour_offset[side]
+        neighbour_pos = self.pos + offset
+        return self.chunk.get_block(neighbour_pos)
 
     def set(self, block_data: Union[int, BlockID, BlockData]):
         if isinstance(block_data, int):
@@ -247,7 +256,6 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         was_opaque = self.is_opaque
 
         self.data = block_data
-        self.face_tex_ids[:] = block_data.face_textures[:]
 
         if was_solid and not self.is_solid:
             pass
@@ -258,18 +266,35 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
     def update(self):
         if not self._awaiting_update:
             return  # Shouldn't be possible
-        for side in range(6):
-            neighbour = self.neighbour(side)
-            if neighbour is None:
-                self._face_is_visible(side)
-            else:
-                if not neighbour.is_opaque:
-                    self._face_is_visible(side)
+        is_air = self.block_id == BlockID.Air
+        for face in range(6):
+            opposite_face = _opposite_side[face]
+            neighbour: Optional[Block] = self.neighbour(face)
+            if DO_FACE_HIDING:
+                if neighbour is None:
+                    if is_air:
+                        continue
+                    else:
+                        self.reveal_face(face)
                 else:
-                    self._face_is_not_visible(side)
-                if not neighbour._awaiting_update:
-                    neighbour.stack_update()
+                    if neighbour.block_id == BlockID.Air:
+                        if is_air:
+                            continue
+                        else:
+                            self.reveal_face(face)
+                    else:
+                        if neighbour.is_opaque:
+                            if is_air:
+                                neighbour.reveal_face(opposite_face)
+                            else:
+                                self.hide_face(face)
+                                neighbour.hide_face(opposite_face)
+                        else:
+                            self.reveal_face(face)
+            elif not is_air:
+                self.reveal_face(face)
         self._awaiting_update = False
+
 
     def _is_face_visible(self, face: int):
         return self._visible_bitmask & _FACE_MASKS[face]
@@ -289,6 +314,14 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             return
         self._num_visible_cache = len(self._visible_list)
         self._visible_cache_valid = True
+
+    def hide_face(self, face: int):
+        self._face_is_not_visible(face)
+        self.face_tex_ids[face] = FaceTexID.Null
+
+    def reveal_face(self, face: int):
+        self._face_is_visible(face)
+        self.face_tex_ids[face] = self.data.face_textures[face]
 
     @property
     def visible_faces(self):
@@ -328,16 +361,6 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
     def is_renderable(self) -> bool:
         return self.num_visible_faces != 0
 
-    def hide_face(self, side: Union[int, Side]):
-        if isinstance(side, Side):
-            side = _side_cache[side]
-        self._face_is_not_visible(side)
-
-    def reveal_face(self, side: Union[int, Side]):
-        if isinstance(side, Side):
-            side = _side_cache[side]
-        self._face_is_visible(side)
-
     def to_nbt(self) -> nbtlib.Compound:
         return self.data.to_nbt()
 
@@ -347,25 +370,6 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             _block_id_cache[int(nbt_data["BlockID"])]]  # Get Base BlockData from BlockID Enum
         # TODO: obtain saved block states from nbt compound tag
         return Block(block_in_chunk_index, block_data)  # Create Block Object
-
-
-class BlockShape(TexQuad):
-    def __init__(self, block_data: np.ndarray, face_data: np.ndarray):
-        self._inst_face_data: np.ndarray = face_data
-        super().__init__(model_mats=block_data)
-
-    def list_inst_attrs(self) -> List[VA._Base]:
-        return [
-            VA.Float.Mat4("a_Model", divisor=6),
-            VA.Int.Scalar("a_FaceID", divisor=1),
-            VA.Int.Scalar("a_TexPosID", divisor=1),
-            VA.Int.Scalar("a_TexSizeID", divisor=1),
-        ]
-
-    def get_instance_data_lists(self) -> List[np.ndarray]:
-        return super().get_instance_data_lists() + [
-            self._inst_face_data
-        ]
 
 
 if __name__ == "__main__":

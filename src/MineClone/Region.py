@@ -7,140 +7,33 @@ from dataclasses import dataclass, field
 from typing import Callable, BinaryIO
 
 import nbtlib
+import numpy as np
 
 from Chunk import *
 
 if TYPE_CHECKING:
     from World import World
 
-REGION_CHUNK_WIDTH: int = 32
-_REGION_CHUNK_WIDTH_ID_RANGE: range = range(REGION_CHUNK_WIDTH)
-
-REGION_CHUNK_EXTENTS: glm.vec3 = glm.vec3(REGION_CHUNK_WIDTH, 1, REGION_CHUNK_WIDTH)
-REGION_NUM_CHUNKS: int = int(np.prod(REGION_CHUNK_EXTENTS))
-_REGION_CHUNK_ID_RANGE: range = range(REGION_NUM_CHUNKS)
-
-REGION_CHUNK_OFFSETS: List[glm.vec3] = [glm.vec3(x, 0, z) for x in _REGION_CHUNK_ID_RANGE for z in
-                                        _REGION_CHUNK_ID_RANGE]
-
-REGION_BLOCK_WIDTH: int = REGION_CHUNK_WIDTH * CHUNK_BLOCK_WIDTH
-REGION_BLOCK_EXTENTS: glm.vec3 = REGION_CHUNK_EXTENTS * CHUNK_BLOCK_EXTENTS
-REGION_NUM_BLOCKS: int = REGION_NUM_CHUNKS * CHUNK_NUM_BLOCKS
-
-REGION_BASE_AABB = AABB.from_pos_size(size=REGION_BLOCK_EXTENTS)
-
-REGION_CHUNK_NONE_LIST = [None] * REGION_NUM_CHUNKS
-
 PROCESS_POOL_SIZE = max(1, os.cpu_count() - 1)
 
-WORLD_REGION_WIDTH: int = 3
-
-if WORLD_REGION_WIDTH % 3:
-    raise RuntimeError(f"World Region Width: {WORLD_REGION_WIDTH} is not acceptable."
-                       f" It must be a multiple of 3")
-WORLD_REGION_WIDTH_HALF: int = WORLD_REGION_WIDTH // 2
-_WORLD_REGION_WIDTH_ID_RANGE: range = range(-WORLD_REGION_WIDTH_HALF, WORLD_REGION_WIDTH_HALF + 1)
-
-
-######### Coordinate - Coordinate Translation #########
-# World Region Coords to World Coords
-def wr_coords_to_w_coords(wr_coords: glm.vec2) -> glm.vec3:
-    return glm.vec3(wr_coords[0], 1, wr_coords[1]) * REGION_BLOCK_EXTENTS // 2
-
-
-# World Coords to Region Chunk Coords
-def w_coords_to_rc_coords(w_coords: glm.vec3) -> glm.vec2:
-    return glm.vec2(w_coords.x // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH,
-                    w_coords.z // CHUNK_BLOCK_WIDTH % REGION_CHUNK_WIDTH)
-
-
-def w_coords_to_wr_coords(w_coords: glm.vec3) -> glm.vec2:
-    return glm.vec2(
-        int(w_coords.x / (REGION_BLOCK_EXTENTS.x / 2)),
-        int(w_coords.z / (REGION_BLOCK_EXTENTS.z / 2)),
-    )  # Drops the decimal part
-
-
-######################################################
-
-######### Coordinate - ID Translation #########
-
-def wr_coords_to_wrid(wr_coords: glm.vec2) -> int:
-    # Assuming WORLD_REGION_WIDTH_HALF is defined as half the width of your region grid
-    return int((wr_coords[0] + WORLD_REGION_WIDTH_HALF) +
-               (wr_coords[1] + WORLD_REGION_WIDTH_HALF) * WORLD_REGION_WIDTH)
-
-
-# World Coords to World Region ID
-def w_coords_to_wrid(w_coords: glm.vec3) -> int:
-    return wr_coords_to_wrid(
-        w_coords_to_wr_coords(w_coords)
-    )
-
-
-# Region Chunk Coords to Region Chunk ID
-def rc_coords_to_rcid(rc_coords: Union[int, glm.vec2], z: Optional[int] = None) -> int:
-    if isinstance(rc_coords, int):
-        if z:
-            return rc_coords + z * REGION_CHUNK_WIDTH
-        else:
-            raise TypeError("If rc_coords is int, z must be provided")
-    return int(rc_coords[0] + rc_coords[1] * REGION_CHUNK_WIDTH)
-
-
-# World Coords to Region Chunk ID
-def w_coords_to_rcid(w_coords: glm.vec3) -> int:
-    return rc_coords_to_rcid(
-        w_coords_to_rc_coords(w_coords)
-    )
-
-
-###############################################
-
-######### ID - Coordinate Translation #########
-# World Region ID to World Region Coords
-def wrid_to_wr_coords(wrid: int) -> glm.vec2:
-    x = wrid % WORLD_REGION_WIDTH  # Get x coordinate
-    z = wrid // WORLD_REGION_WIDTH  # Get z coordinate
-    return glm.vec2(x, z)  # Return as glm.vec2 object
-
-
-# World Region ID to World Coords
-def wrid_to_w_coords(wrid: int) -> glm.vec3:
-    return wr_coords_to_w_coords(wrid_to_wr_coords(wrid))
-
-
-###############################################
-
-
-_CHUNK_MASKS = tuple(1 << i for i in _REGION_CHUNK_ID_RANGE)
-
-
 @dataclass
-class Region(MCPhys, aabb=REGION_BASE_AABB):
-    chunks: List[Optional[Chunk]] = field(default_factory=lambda: copy(REGION_CHUNK_NONE_LIST))
+class Region(MCPhys, aabb=REGION.AABB):
+    chunks: List[List[Optional[Chunk]]] = field(default_factory=lambda: copy(REGION.NONE_LIST))
 
     _from_bytes: bool = False
     world: Optional[World] = None
 
     def __post_init__(self):
+        if self.index == 0:
+            self.index = glm.ivec2((WORLD.WIDTH + 1) // 2)
         super().__post_init__()
         if self.index is None:
             return
-
-        self._renderable_dict: Dict[int, Chunk] = {}
-        self._renderable_bitmask: int = 0
-        self._renderable_list_cache: List[Chunk] = []
-        self._num_renderable_cache: int = 0
-        self._renderable_cache_valid: bool = False
 
         self._update_deque: deque[Chunk] = deque()
         self._awaiting_update: bool = False
 
         self.initialized: bool = False
-
-    def _get_chunk_id(self, x: int, z: int) -> int:
-        return (z * REGION_CHUNK_WIDTH) + x
 
     def initialize(self, region_pos: glm.vec3, world: Optional[World] = None):
         if world:
@@ -149,11 +42,19 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
             self.world = world
 
         self.pos += region_pos
+        self.region_noise_map: Optional[np.ndarray] = None
 
         if self._from_bytes:
-            for chunk in self.chunks:
-                if chunk is not None:
-                    chunk.initialize(self)
+            for axis in self.chunks:
+                for chunk in axis:
+                    if chunk is not None:
+                        chunk.initialize(self)
+        else:
+            self.region_noise_map = generate_region_noise(
+                self.world.world_noise_map,
+                self.index,
+                self.pos
+            )
 
         self.enqueue_update()
         self.initialized = True
@@ -182,108 +83,41 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
         while self._update_deque:
             chunk = self._update_deque.popleft()
             chunk.update()
-            self.update_chunk_in_lists(chunk)
+            print(f"Chunk ({chunk.index.x}, {chunk.index.y}) Updated!")
         self._awaiting_update = False
 
-    def _is_index_out_of_bounds(self, chunk_index):
-        if not -1 < chunk_index < REGION_NUM_CHUNKS:
+    def _is_index_out_of_bounds(self, chunk_index: glm.ivec2):
+        if not np.prod(glm.ivec2(-1) < chunk_index < glm.ivec2(REGION.NUM_CHUNKS)):
             raise ValueError(f"Chunk Index: {chunk_index} is out of region bounds")
 
-    def init_chunk(self, chunk_index: int):
-        self._is_index_out_of_bounds(chunk_index)
-        self.chunks[chunk_index] = Chunk(chunk_index, region=self)
+    def init_chunk(self, rcid: glm.ivec2):
+        self._is_index_out_of_bounds(rcid)
+        self.chunks[rcid[1]][rcid[0]] = Chunk(rcid, region=self)
         if not self._awaiting_update:
             self.enqueue_update()
 
-    def get_chunk(self, chunk_index: int) -> Optional[Chunk]:
-        # self._is_index_out_of_bounds(chunk_index)
-        return self.chunks[chunk_index]
-
-    def init_chunk_from_rc_coords(self, rc_coords: glm.vec2):
-        try:
-            self.init_chunk(rc_coords_to_rcid(rc_coords))
-        except ValueError:
-            raise ValueError(f"Region Chunk Coords: {rc_coords} are out of bounds")
-
-    def get_chunk_from_rc_coords(self, rc_coords: Union[int, glm.vec2], z: Optional[int] = None) -> int:
-        try:
-            return self.get_chunk(rc_coords_to_rcid(rc_coords, z))
-        except ValueError:
-            if isinstance(rc_coords, int):
-                raise ValueError(f"Region Chunk Coords: ({rc_coords}, {z}) are out of bounds")
-            else:
-                raise ValueError(f"Region Chunk Coords: {rc_coords} are out of bounds")
-
-    def _is_chunk_solid(self, chunk: Chunk):
-        return self._solid_bitmask & _CHUNK_MASKS[chunk.index]
-
-    def _chunk_is_solid(self, chunk: Chunk):
-        if not self._is_chunk_solid(chunk):  # Check if Chunk was not solid
-            self._solid_dict[chunk.index] = chunk
-            self._solid_bitmask |= _CHUNK_MASKS[chunk.index]
-            self._solid_cache_valid = False
-
-    def _chunk_is_not_solid(self, chunk: Chunk):
-        if self._is_chunk_solid(chunk):  # Check if Chunk was solid
-            self._solid_dict.pop(chunk.index)
-            self._solid_bitmask &= ~_CHUNK_MASKS[chunk.index]
-            self._solid_cache_valid = False
-
-    def _is_chunk_renderable(self, chunk: Chunk):
-        return self._renderable_bitmask & _CHUNK_MASKS[chunk.index]
-
-    def _chunk_is_renderable(self, chunk: Chunk):
-        if not self._is_chunk_renderable(chunk):  # Check if Chunk was not renderable
-            self._renderable_dict[chunk.index] = chunk
-            self._renderable_bitmask |= _CHUNK_MASKS[chunk.index]
-            self._renderable_cache_valid = False
-
-    def _chunk_is_not_renderable(self, chunk: Chunk):
-        if self._is_chunk_renderable(chunk):  # Check if Chunk was renderable
-            self._renderable_dict.pop(chunk.index)
-            self._renderable_bitmask &= ~_CHUNK_MASKS[chunk.index]
-            self._renderable_cache_valid = False
-
-    def update_chunk_in_lists(self, chunk: Chunk):
-        if chunk.is_renderable:
-            self._chunk_is_renderable(chunk)
-        else:
-            self._chunk_is_not_renderable(chunk)
-
-    def _validate_renderable_cache(self):
-        self._renderable_list_cache = self._renderable_dict.values()
-        self._num_renderable_cache = len(self._renderable_list_cache)
-        self._renderable_cache_valid = True
-
-    @property
-    def renderable_chunks(self):
-        if not self._renderable_cache_valid:
-            self._validate_renderable_cache()
-        return self._renderable_list_cache
-
-    @property
-    def num_renderable_chunks(self):
-        if not self._renderable_cache_valid:
-            self._validate_renderable_cache()
-        return self._num_renderable_cache
+    def get_chunk(self, rcid: glm.ivec2) -> Optional[Chunk]:
+        return self.chunks[rcid[1]][rcid[0]]
 
     @property
     def non_none_chunks(self) -> Tuple[Chunk]:
         return tuple(filter(lambda x: x is not None, self.chunks))
 
-    @property
-    def is_renderable(self) -> bool:
-        return bool(self._num_renderable_cache)
-
     def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
-        if self.bounds.intersectPoint(block_pos):
-            local_pos = [int(i) for i in block_pos.xz - self.pos]
-            chunk = self.get_chunk(self._get_chunk_id(*local_pos))
+        #if block_pos == glm.vec3(0.5, 0.5, -15.5):
+        #print(block_pos)
+        if self.bounds.intersect_point(block_pos):
+            local_pos = w_to_rc(block_pos)
+            chunk = self.get_chunk(local_pos)
             if chunk is None:
                 return None
-            return chunk.get_block(block_pos)
+            block = chunk.get_block(block_pos)
         else:
-            return self.world.get_block(block_pos)
+            block = self.world.get_block(block_pos)
+        if block is not None:
+            if block_pos != block.pos:
+                raise Exception("Wrong Block!")
+        return block
 
     def serialize(self) -> bytes:
         # create byte arrays to store chunk locations, timestamps and payloads
@@ -381,7 +215,32 @@ class Region(MCPhys, aabb=REGION_BASE_AABB):
             chunks.append(chunk)
         return Region(wrid, chunks)
 
-
+    def get_shape(self):
+        block_instances = []
+        block_face_ids = []
+        block_face_tex_ids = []
+        block_face_tex_size_ids = []
+        for z in REGION.WIDTH_RANGE:
+            for x in REGION.WIDTH_RANGE:
+                chunk = self.chunks[z][x]
+                if chunk is None:
+                    continue
+                else:
+                    block_instances.extend(chunk.block_instances)
+                    block_face_ids.extend(chunk.block_face_ids)
+                    block_face_tex_ids.extend(chunk.block_face_tex_ids)
+                    block_face_tex_size_ids.extend(chunk.block_face_tex_size_ids)
+        return DataLayout(
+            [
+                VertexAttribute("a_Position", TexQuad._positions),
+                VertexAttribute("a_Alpha", [1.0, 1.0, 1.0, 1.0]),
+                VertexAttribute("a_TexUV", TexQuad._tex_uvs),
+                VertexAttribute("a_Model", block_instances, divisor=6),
+                VertexAttribute("a_FaceID", np.concatenate(block_face_ids), divisor=1),
+                VertexAttribute("a_FaceTexID", np.concatenate(block_face_tex_ids), divisor=1),
+                VertexAttribute("a_FaceTexSizeID", np.concatenate(block_face_tex_size_ids), divisor=1),
+            ]
+        )
 if __name__ == "__main__":
     def test():
         from World import World

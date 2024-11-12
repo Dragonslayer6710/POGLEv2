@@ -207,7 +207,6 @@ class VertexAttribute:
             self.dtype = np.float32
         else:
             raise TypeError("Only Base Data Types of int/np.int32 or float/np.float32 are allowed")
-
         self.data = np.array(self.data, dtype=self.dtype)
         self.base_size: int = elem_size * self.num_elements
         self._component_size = self.base_size // self._component_count
@@ -225,7 +224,6 @@ class VertexAttribute:
             glEnableVertexAttribArray(attr_index)
 
             component_pointer = pointer + self._component_size * i
-
             if self.gl_type in (GL_INT, GL_UNSIGNED_INT, GL_SHORT, GL_UNSIGNED_SHORT):
                 glVertexAttribIPointer(attr_index, self._elem_count, self.gl_type, stride,
                                        ctypes.c_void_p(component_pointer))
@@ -235,7 +233,10 @@ class VertexAttribute:
             glVertexAttribDivisor(attr_index, self.divisor)
             if print_attribute:
                 print(
-                    f"Pointer Set: {self.name}{('['+str(i)+']') if self._component_count > 1 else ''}:\t{{index: {attr_index} | elements: {self._elem_count} | bytes: {self._component_size} | dtype: {self.gl_type} | normalized: {self.normalized} | stride: {stride} | offset: {component_pointer} | divisor: {self.divisor}}}")
+                    f"Pointer Set: {self.name}{('['+str(i)+']') if self._component_count > 1 else ''}:\t"
+                    f"{{index: {attr_index} | elements: {self._elem_count} | bytes: {self._component_size} |"
+                    f" dtype: {self.gl_type} | normalized: {self.normalized} | stride: {stride} |"
+                    f" offset: {component_pointer} | divisor: {self.divisor}}}")
         return attr_index + 1
 
 
@@ -246,7 +247,6 @@ class DataLayout:
     def __post_init__(self):
         self._divisors: List[int] = []
         self._strides: Dict[int, int] = {}
-        self._pointers: Dict[int, int] = {}
         self._attributes: Dict[int, List[VertexAttribute]] = {}
         self._dtypes: Dict[int, List] = {}
         for attribute in self.attributes:
@@ -254,7 +254,6 @@ class DataLayout:
             if divisor not in self._divisors:
                 self._divisors.append(divisor)
                 self._strides[divisor] = 0
-                self._pointers[divisor] = 0
                 self._attributes[divisor] = []
                 self._dtypes[divisor] = []
             else:
@@ -276,17 +275,17 @@ class DataLayout:
 
     def set_pointers(self, print_attributes=False):
         index: int = 0
+        division_pointer: int = 0 # Points to the start of each division
         for i, divisor in enumerate(self._divisors):
-            division_size: int = 0
+            attribute_pointer: int = 0 # Points to the start of each attribute irrespective of divisor
             for attribute in self._attributes[divisor]:
+                pointer: int = division_pointer + attribute_pointer
                 index = attribute.set_attribute_pointer(
-                    index, self._strides[divisor], self._pointers[divisor], print_attributes
+                    index, self._strides[divisor], pointer, print_attributes
                 )
-                self._pointers[divisor] += attribute.base_size
-                division_size += attribute.base_size
-            division_size *= self._attributes[divisor][0].size
-            if i != len(self._divisors) - 1:
-                self._pointers[self._divisors[i+1]] = division_size
+                attribute_pointer += attribute.base_size
+            # Multiple attribute pointer by number of "instances" of the attributes to get the next division pointer
+            division_pointer += attribute_pointer * self._attributes[divisor][0].size
 
     def get_data(self) -> bytes:
         data: Optional[bytes] = None
