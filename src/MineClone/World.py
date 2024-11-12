@@ -3,11 +3,6 @@ from __future__ import annotations
 import pstats
 
 import os.path
-import pickle
-
-import glm
-import nbtlib
-import numpy as np
 
 from Region import *
 
@@ -64,14 +59,11 @@ class World(MCPhys, aabb=WORLD.AABB):
         self.regions = copy(WORLD.NONE_LIST)
 
         self._update_deque: deque[Region] = deque()
-        self.world_noise_map: Optional[np.ndarray] = None
         if self._from_file:
             for region_file in os.listdir(f"{self.file_path}\\region"):
                 wr_coords = glm.vec2(tuple(int(i) for i in region_file.split("r.")[1].split(".mcr")[0].split(".")))
                 self.region_from_file(wr_coords)
         else:
-            self.world_noise_map = generate_global_noise_map()
-
             # Initialise Spawn Region
             self.init_region()
             print(f"Generating {WORLD.INITIAL_NUM_SPAWN_CHUNKS} Initial spawn chunks...")
@@ -126,27 +118,15 @@ class World(MCPhys, aabb=WORLD.AABB):
         if not region._awaiting_update:
             self.enqueue_region(region)
 
-    def set_region_from_w_coords(self, w_coords: glm.vec3, region: Region):
-        try:
-            self.set_region(w_coords_to_wrid(w_coords), region)
-        except ValueError:
-            raise ValueError(f"World Region Coords: {w_coords} are out of bounds")
-
     def get_region(self, wrid: glm.ivec2) -> Optional[Region]:
         return self.regions[wrid[0]][wrid[1]]
-
-    def get_region_from_w_coords(self, w_coords: glm.vec3) -> Region:
-        try:
-            return self.get_region(w_coords_to_wrid(w_coords))
-        except ValueError:
-            raise ValueError(f"World Region Coords: {w_coords} are out of bounds")
 
     def region_to_file(self, region: Region):
         World.save_region_to_file(region, self.file_path)
 
-    def region_from_file(self, wrid: int) -> Region:
+    def region_from_file(self, wrid: glm.ivec2) -> Region:
         region = World.load_region_from_file(wrid, self.file_path)
-        region.initialize(wrid_to_w_coords(wrid), self)
+        region.initialize(wrid, self)
         self.update_region_in_lists(region)
         self.regions[wrid] = region
 
@@ -165,7 +145,7 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
         if self.bounds.intersect_point(block_pos):
-            local_pos = [int(i) for i in w_coords_to_wr_coords(block_pos)]
+            local_pos = [int(i) for i in w_to_wr(block_pos)]
             region = self.get_region(self._get_region_id(*local_pos))
             if region is None:
                 return None

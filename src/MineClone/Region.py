@@ -42,19 +42,12 @@ class Region(MCPhys, aabb=REGION.AABB):
             self.world = world
 
         self.pos += region_pos
-        self.region_noise_map: Optional[np.ndarray] = None
 
         if self._from_bytes:
             for axis in self.chunks:
                 for chunk in axis:
                     if chunk is not None:
                         chunk.initialize(self)
-        else:
-            self.region_noise_map = generate_region_noise(
-                self.world.world_noise_map,
-                self.index,
-                self.pos
-            )
 
         self.enqueue_update()
         self.initialized = True

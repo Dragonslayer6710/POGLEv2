@@ -185,7 +185,7 @@ class _WORLD(_Constants):
         self.BIOME_VARIATION = 10
 
 
-WORLD = _WORLD(3, 19, 3)
+WORLD = _WORLD(3, 19, 9)
 
 
 def w_to_wr(w: Union[glm.vec2, glm.ivec2, glm.ivec3, glm.vec3]) -> glm.ivec2:

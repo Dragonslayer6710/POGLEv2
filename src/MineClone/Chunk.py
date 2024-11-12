@@ -93,6 +93,8 @@ def _decompress_chunk_data(compressed_data, compression_type):
 
 
 NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
+noise = PerlinNoise(octaves=6, seed=42)
+
 @dataclass
 class Chunk(MCPhys, aabb=CHUNK.AABB):
     blocks: Tuple[Tuple[Tuple[Block, ...], ...], ...] = field(
@@ -146,7 +148,8 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         self.block_face_tex_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
         self.block_face_tex_size_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
 
-        self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK.NUM_BLOCKS,), dtype=np.ndarray)
+        self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK.NUM_BLOCKS,),
+                                                                                        dtype=np.ndarray)
 
         if self.region:
             self.initialize()
@@ -166,14 +169,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             int: The generated height at the (x, z) coordinate.
         """
         # Base height generation using Perlin noise
-        base_height = noise([x / 100.0, z / 100.0]) * 40  # Scale the noise (height variation)
-        base_height = int(base_height + WORLD.SURFACE_HEIGHT)  # Adjust for sea level
-
-        # Add biome variation (this is a simplistic way to emulate biome diversity)
-        biome_variation = noise([x / 200.0, z / 200.0]) * WORLD.BIOME_VARIATION
-
-        # Combine the noise-generated height and biome variation
-        height = base_height + int(biome_variation)
+        height = noise([x / 100.0, z / 100.0]) * CHUNK.HEIGHT  # Scale the noise (height variation)
 
         # Clamp the height to within chunk bounds
         height = max(0, min(CHUNK.HEIGHT - 1, height))
@@ -189,21 +185,15 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         offset_xz = REGION.CHUNK_OFFSETS[self.index[1]][self.index[0]]
         self.pos = self.region.pos.xyz + glm.vec3(offset_xz[0], 0, offset_xz[1])
         self.pos -= CHUNK.EXTENTS_HALF
-        if not self._from_nbt:
-            self.height_map: np.ndarray = generate_chunk_noise(
-                self.region.region_noise_map,
-                self.index,
-                self.pos
-            )
+
         for y, section in enumerate(self.blocks):
             y_index = y * CHUNK.SECTION_NUM_BLOCKS
             for z, yz_plane in enumerate(section):
                 z_index = z * CHUNK.WIDTH
                 for x, block in enumerate(yz_plane):
-                    index: int  = y_index + z_index + x
+                    index: int = y_index + z_index + x
                     if not self._from_nbt:
                         height = self.height_map[z][x]
-                        print(height)
                         if height is None:
                             height = self.height_map[z][x] = self.generate_height(self.pos.x + x, self.pos.z + z)
                         if y <= height:
@@ -220,10 +210,10 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
                     block.pos += glm.vec3(x, y, z)
                     block.initialize(self)
                     self.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
-                    #self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
-            #quit()
-                    #if z == 1 and x == 1:
-                    #    quit()
+                    # self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
+            # quit()
+            # if z == 1 and x == 1:
+            #    quit()
         self.pos += CHUNK.EXTENTS_HALF
 
         self.enqueue_update()
@@ -267,8 +257,8 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         self._awaiting_update = False
 
     def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
-        #if block_pos == glm.vec3(0.5,          0.5,        -15.5):
-        #print(block_pos)
+        # if block_pos == glm.vec3(0.5,          0.5,        -15.5):
+        # print(block_pos)
         if self.bounds.intersect_point(block_pos):
             local_pos = w_to_cb(block_pos)
             block = self.blocks[local_pos.y][local_pos.z][local_pos.x]
@@ -293,7 +283,8 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
                     nbtlib.Compound({
                         "Y": nbtlib.Byte(y - 128),
                         "block_states": block_state_compound(
-                            self.blocks[y * CHUNK.SECTION_NUM_BLOCKS: y * CHUNK.SECTION_NUM_BLOCKS + CHUNK.SECTION_NUM_BLOCKS]
+                            self.blocks[
+                            y * CHUNK.SECTION_NUM_BLOCKS: y * CHUNK.SECTION_NUM_BLOCKS + CHUNK.SECTION_NUM_BLOCKS]
                         ),
                         # "biomes": biome_compound(
                         #    None#self.blocks[y * SECTION_NUM_BIOMES: y * SECTION_NUM_BIOMES + SECTION_NUM_BIOMES]
@@ -464,6 +455,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
 class _Region(MCPhys, aabb=REGION.AABB):
     chunks: List[Chunk] = []
+
     def enqueue_chunk(self, chunk: Chunk):
         self.chunks.append(chunk)
 
@@ -473,6 +465,7 @@ class _Region(MCPhys, aabb=REGION.AABB):
 
     def get_block(self, block_pos: glm.vec3):
         return None
+
 
 if __name__ == "__main__":
     a: Chunk = Chunk(0)
