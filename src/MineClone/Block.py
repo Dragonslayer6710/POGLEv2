@@ -22,7 +22,6 @@ from POGLE.Core.Core import ImDict
 from POGLE.Core.Core import Union, Any, Dict, List, Tuple
 from POGLE.Core.Core import np
 
-from POGLE.Core.Core import struct
 from POGLE.Physics.Collisions import PhysicalBox, AABB
 
 from timeit import timeit

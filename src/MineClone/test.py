@@ -87,8 +87,8 @@ def _main():
     glEnable(GL_DEPTH_TEST)
 
     projection = camera.get_projection()  # glm.perspective(glm.radians(45.0), 800 / 600, 0.1, 100.0)
-    camera.Position = glm.vec3(8, 24, 9)
-    camera.Pitch = -90
+    camera.Position = glm.vec3(8, 20, 9)
+    camera.Pitch = -15
     view = camera.GetViewMatrix()
     ubo_mats = UniformBuffer()
     ub_mats = UniformBlock.create(UniformBlockLayout(

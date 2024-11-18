@@ -1,11 +1,11 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Union, List, Optional, Tuple
-from perlin_noise import PerlinNoise
+from typing import Tuple
 
 import numpy as np
 
-from POGLE.Physics.Collisions import AABB, glm
+from Generation import *
+from POGLE.Physics.Collisions import AABB
 
 
 @dataclass
@@ -58,7 +58,6 @@ class _CHUNK(_Constants):
         ]
         self.LOWEST_Y = LOWEST_Y
 
-
 CHUNK = _CHUNK(16, 16, 0)
 
 
@@ -95,24 +94,6 @@ class _REGION(_Constants):
 
 
 REGION = _REGION(32)
-
-
-def normalize_noise(noise_value, min_height, max_height):
-    # Normalize the noise value to the desired height range
-    return noise_value * (max_height - min_height) / 2 + (min_height + max_height) / 2
-
-
-# Adjust the amplitude for height range
-def generate_height_map(width, octaves=6, scale=0.1, min_height=0, max_height=CHUNK.HEIGHT):
-    noise = PerlinNoise(octaves=octaves, seed=42)
-
-    height_map = np.zeros((width, width))
-    for z in range(width):
-        for x in range(width):
-            noise_value = noise([x * scale, z * scale])
-            height_map[z][x] = normalize_noise(noise_value, min_height, max_height)
-
-    return height_map
 
 
 @dataclass
@@ -185,7 +166,7 @@ class _WORLD(_Constants):
         self.BIOME_VARIATION = 10
 
 
-WORLD = _WORLD(3, 19, 9)
+WORLD = _WORLD(3, 19, 3)
 
 
 def w_to_wr(w: Union[glm.vec2, glm.ivec2, glm.ivec3, glm.vec3]) -> glm.ivec2:

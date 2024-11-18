@@ -1,34 +1,21 @@
 from __future__ import annotations
 
-import random
-from itertools import repeat
 
 from io import BytesIO
 import zlib
 
-from glm import float32
 
-import math
-import random
-
-import os.path
-import pickle
-
-import nbtlib
-import numpy as np
 
 from Block import *
 from Entity import *
 from Biome import *
 
 from dataclasses import dataclass, field
-from typing import Set
 from collections import deque
 
 if TYPE_CHECKING:
     from Region import Region
 
-from POGLE.Physics.SpatialTree import Octree
 
 
 def block_state_compound(blocks: List[Block]) -> nbtlib.Compound:
@@ -55,17 +42,15 @@ def block_state_compound(blocks: List[Block]) -> nbtlib.Compound:
 
 
 def biome_compound(biomes: List[Biome]) -> nbtlib.Compound:
-    if BIOME_NOT_IMPLEMENTED:
-        return None
     palette: List[BiomeID] = []
     nbt_palette: List[nbtlib.Compound] = []
     data: List[int] = []
     for biome in biomes:
         try:
-            index = palette.index(biome.biome_id)
+            index = palette.index(biome.id)
         except ValueError:
             index = palette.__len__()
-            palette.append(biome.biome_id)
+            palette.append(biome.id)
             nbt_palette.append(biome.to_nbt())
         finally:
             data.append(index)
@@ -93,7 +78,9 @@ def _decompress_chunk_data(compressed_data, compression_type):
 
 
 NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
-noise = PerlinNoise(octaves=6, seed=42)
+
+
+ngen: Optional[NoiseGen] = None
 
 @dataclass
 class Chunk(MCPhys, aabb=CHUNK.AABB):
@@ -154,28 +141,6 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         if self.region:
             self.initialize()
 
-    def generate_height(self, x: float, z: float) -> int:
-        """
-        Generate a height value based on Perlin noise.
-
-        This function mimics Minecraft's terrain generation by using Perlin noise
-        to generate heightmaps for terrain at specific coordinates (x, z).
-
-        Args:
-            x (float): The world coordinate x.
-            z (float): The world coordinate z.
-
-        Returns:
-            int: The generated height at the (x, z) coordinate.
-        """
-        # Base height generation using Perlin noise
-        height = noise([x / 100.0, z / 100.0]) * CHUNK.HEIGHT  # Scale the noise (height variation)
-
-        # Clamp the height to within chunk bounds
-        height = max(0, min(CHUNK.HEIGHT - 1, height))
-
-        return height
-
     def initialize(self, region: Optional[Region] = None):
         if region:
             if self.region:
@@ -196,10 +161,11 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
                         height = self.height_map[z][x]
                         if height is None:
                             height = self.height_map[z][x] = self.generate_height(self.pos.x + x, self.pos.z + z)
+
                         if y <= height:
                             if y < height - 4:
                                 block.set(BlockID.Stone)
-                            elif y < height:
+                            elif y < height - 1:
                                 block.set(BlockID.Dirt)
                             else:
                                 block.set(BlockID.Grass)
@@ -218,6 +184,9 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
         self.enqueue_update()
         self.initialized = True
+
+    def generate_height(self, x: float, z: float) -> int:
+        return CHUNK.HEIGHT * ngen.sample_2d(x, z)
 
     def enqueue_update(self):
         if self._awaiting_update:
