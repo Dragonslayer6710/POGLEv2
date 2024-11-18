@@ -1,16 +1,162 @@
-import random
-import numpy as np
-import glm
-import matplotlib.pyplot as plt
+from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Union, Optional, Dict, Tuple
+from matplotlib.colors import Normalize, ListedColormap, BoundaryNorm
+import matplotlib.pyplot as plt
+
 from pyfastnoiselite.pyfastnoiselite import (
     FastNoiseLite, NoiseType, FractalType
 )
 
-from MineClone.Biome import get_temperature_level, get_erosion_level
+from Block import *
+from Biome import *
 
+if TYPE_CHECKING:
+    from Chunk import Chunk
+
+
+def get_temperature_level(temperature: float) -> int:
+    if temperature <= -0.45:
+        return 0
+    elif temperature <= -0.15:
+        return 1
+    elif temperature <= 0.2:
+        return 2
+    elif temperature <= 0.55:
+        return 3
+    else:
+        return 4
+
+
+def get_humidity_level(humidty: float) -> int:
+    if humidty <= -0.35:
+        return 0
+    elif humidty <= -0.1:
+        return 1
+    elif humidty <= 0.1:
+        return 2
+    elif humidty <= 0.3:
+        return 3
+    else:
+        return 4
+
+
+class Continent(Renum):
+    MushroomFields = 0
+    DeepOcean = 1
+    Ocean = 2
+    Coast = 3
+    NearInland = 4
+    MidInland = 5
+    FarInland = 6
+
+
+def get_continentalness_level(continentalness: float) -> Continent:
+    if continentalness <= -1.05:
+        return Continent.MushroomFields
+    elif continentalness <= -0.455:
+        return Continent.DeepOcean
+    elif continentalness <= -0.19:
+        return Continent.Ocean
+    elif continentalness <= -0.11:
+        return Continent.Coast
+    elif continentalness <= 0.03:
+        return Continent.NearInland
+    elif continentalness <= 0.3:
+        return Continent.MidInland
+    else:
+        return Continent.FarInland
+
+
+calculate_continent_base_height = UnivariateSpline(
+    [-1, -0.455, -0.19, -0.11, 0.03, 0.3, 1.0],
+    [62, 30, 50, 62, 64, 70, 100]
+)
+
+
+def get_erosion_level(erosion: float) -> int:
+    if erosion <= -0.78:
+        return 0
+    elif erosion <= -0.375:
+        return 1
+    elif erosion <= -0.2225:
+        return 2
+    elif erosion <= 0.05:
+        return 3
+    elif erosion <= 0.45:
+        return 4
+    elif erosion <= 0.55:
+        return 5
+    else:
+        return 6
+
+
+calculate_erosion_modifier = UnivariateSpline(
+    [-1, -0.78, -0.375, -0.2225, 0.05, 0.45, 0.55, 1.0],
+    [1, 0.98, 0.94, 0.92, 0.9, 0.87, 0.85, 0.8]
+)
+
+
+class PeakValley(Renum):
+    Valleys = 0
+    Low = 1
+    Mid = 2
+    High = 3
+    Peaks = 4
+
+
+PV = PeakValley
+
+
+def calculate_peak_valley_value(weirdness_value: float):
+    return 1 - abs((3 * abs(weirdness_value)) - 2)
+
+
+def get_peak_valley_level(peak_valley_value: float) -> PV:
+    if peak_valley_value <= -0.85:
+        return PV.Valleys
+    elif peak_valley_value <= -0.6:
+        return PV.Low
+    elif peak_valley_value <= 0.2:
+        return PV.Mid
+    elif peak_valley_value <= 0.7:
+        return PV.High
+    else:
+        return PV.Peaks
+
+
+calculate_peak_valley_modifier = UnivariateSpline(
+    [-1, -0.85, -0.6, 0.2, 0.7, 1.0],
+    [-30, -20, -10, 10, 40, 120]
+)
+
+
+def calculate_terrain_height(
+        continentalness: float,
+        erosion: float,
+        peak_valley_value: float) -> float:
+    return (64#calculate_continent_base_height(continentalness)
+            * calculate_erosion_modifier(erosion)
+            + calculate_peak_valley_modifier(peak_valley_value))
+
+@dataclass
+class BiomeParams:
+    temperature: float
+    humidity: float
+    continentalness: float
+    erosion: float
+    weirdness: float
+    depth: float
+
+    def __post_init__(self):
+        self.value_peak_valley: float = calculate_peak_valley_value(self.weirdness)
+
+        self.level_temperature: int = get_temperature_level(self.temperature)
+        self.level_humidty: int = get_humidity_level(self.humidity)
+        self.level_erosion: int = get_erosion_level(self.erosion)
+
+        self.continent: Continent = get_continentalness_level(self.continentalness)
+        self.peak_valley: PeakValley = get_peak_valley_level(self.value_peak_valley)
 
 def get_grid_coords(origin: Union[glm.vec2, glm.vec3],
                     extents: Union[glm.ivec2, glm.ivec3]) -> Tuple[np.ndarray, Tuple[int, ...]]:
@@ -25,13 +171,16 @@ def get_grid_coords(origin: Union[glm.vec2, glm.vec3],
                 extents = glm.ivec3(extents)
         else:
             raise TypeError("extents must be a glm.ivec2 or glm.ivec3")
+    if isinstance(origin, glm.vec2):
+        vec = glm.vec2
+    else:
+        vec = glm.vec3
 
     # Compute the half spread for all axes
-    spread = 1.0
-    half_spread = spread / 2
+    half_extents = extents / 2
 
-    min_point = origin - half_spread
-    max_point = origin + half_spread
+    min_point = origin - vec(half_extents)
+    max_point = origin + vec(half_extents)
 
     # Generate coordinate ranges for each axis
     ranges = [np.linspace(min_point[i], max_point[i], extents[i]) for i in range(len(origin))]
@@ -177,8 +326,6 @@ EroNoiseGen = ErosionNoiseGenerator
 WeirdNoiseGen = WeirdnessNoiseGenerator
 DenseNoiseGen = DensityNoiseGenerator
 
-from matplotlib.colors import Normalize, ListedColormap, BoundaryNorm
-
 # Step 1: Define the biomes and categories
 biome_categories = {
     "Null": (-1, "black"),  # Unassigned or default
@@ -247,12 +394,6 @@ colors = [v[1] for v in biome_categories.values()]
 boundaries = list(range(len(biome_ids) + 1))  # Create discrete boundaries
 biome_cmap = ListedColormap(colors)
 biome_norm = BoundaryNorm(boundaries, biome_cmap.N)
-
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
-
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
 
 
 def plot_noise_grid(noise_values: np.ndarray, cmap: str = "gray", title: str = "Perlin Noise Grid",
@@ -332,37 +473,6 @@ def plot_cross_section(array_3d, slice_type="xy", slice_index=0):
 
 def plot_3d_isometric(array_3d):
     """
-    Plots the whole 3D array in an isometric view using scatter or surface plot.
-
-    Parameters:
-    - array_3d: 3D numpy array of data (density values).
-    """
-    # Create a meshgrid for the coordinates
-    z, y, x = array_3d.nonzero()  # Get the coordinates of non-zero points
-    values = array_3d[z, y, x]  # Extract the corresponding density values
-    gradient = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-
-    # Set up the figure and 3D axis
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(x, y, z, projection='3d')
-
-    # Plot the points as a scatter plot (you can also use other plot types like surface or wireframe)
-    ax.scatter(x, y, z, c=gradient, cmap='viridis', marker='o', alpha=0.1)
-
-    # Set the labels and title
-    ax.set_xlabel("X-axis")
-    ax.set_ylabel("Y-axis")
-    ax.set_zlabel("Z-axis")
-    ax.set_title("3D Isometric View of Array")
-
-    # Set the aspect ratio to be equal to ensure the isometric view
-    ax.view_init(azim=45, elev=30)  # Adjust view angle to give isometric perspective
-
-    plt.show()
-
-
-def plot_3d_isometric(array_3d):
-    """
     Plots the whole 3D array in an isometric view with colors based on the distance
     of each point from the origin or based on the x, y, z positions.
 
@@ -370,8 +480,8 @@ def plot_3d_isometric(array_3d):
     - array_3d: 3D numpy array of data (density values).
     """
     # Create a meshgrid for the coordinates
-    z, y, x = array_3d.nonzero()  # Get the coordinates of non-zero points
-    values = array_3d[z, y, x]  # Extract the corresponding density values
+    y, z, x = array_3d.nonzero()  # Get the coordinates of non-zero points
+    values = array_3d[y, z, x]  # Extract the corresponding density values
 
     # Calculate a gradient for coloring based on x, y, z positions
     # This can be a simple Euclidean distance from the origin (0, 0, 0)
@@ -382,12 +492,12 @@ def plot_3d_isometric(array_3d):
     ax = fig.add_subplot(111, projection='3d')
 
     # Plot the points as a scatter plot with coloring based on gradient
-    sc = ax.scatter(x, y, z, c=gradient, cmap='viridis', marker='o', alpha=0.6)
+    sc = ax.scatter(x, z, y, c=gradient, cmap='viridis', marker='o', alpha=0.6)
 
     # Set the labels and title
     ax.set_xlabel("X-axis")
-    ax.set_ylabel("Y-axis")
-    ax.set_zlabel("Z-axis")
+    ax.set_ylabel("Z-axis")
+    ax.set_zlabel("Y-axis")
     ax.set_title("3D Isometric View of Array with Gradient Coloring")
 
     # Set the aspect ratio to be equal to ensure the isometric view
@@ -397,3 +507,106 @@ def plot_3d_isometric(array_3d):
     fig.colorbar(sc, ax=ax, shrink=0.5, aspect=10)
 
     plt.show()
+
+
+class TerrainGenerator:
+    def __init__(self, seed: int):
+        self.seed: int = seed
+        self.c_ngen = ContinentalNoiseGenerator(self.seed)
+        self.t_ngen = TempNoiseGen(self.seed + 1)
+        self.h_ngen = HumidNoiseGen(self.seed + 2)
+        self.e_ngen = EroNoiseGen(self.seed + 3)
+        self.w_ngen = WeirdNoiseGen(self.seed + 4)
+        self.d_ngen = DenseNoiseGen(self.seed + 5)
+
+        self.chunk_size = CHUNK.EXTENTS.yzx
+
+    def gen_chunk(self, chunk: Chunk):
+        grid_coords_2d, grid_shape_2d = get_grid_coords(chunk.pos.yz, self.chunk_size.yz)
+        grid_coords_3d, grid_shape_3d = get_grid_coords(chunk.pos.yzx, self.chunk_size)
+        chunk.pos -= CHUNK.EXTENTS_HALF
+
+        c_noise_values: np.ndarray = self.c_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+        t_noise_values: np.ndarray = self.t_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+        h_noise_values: np.ndarray = self.h_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+        e_noise_values: np.ndarray = self.e_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+        w_noise_values: np.ndarray = self.w_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+
+        pv_values: np.ndarray = np.zeros(grid_shape_2d)
+        th_values: np.ndarray = np.zeros(grid_shape_2d)
+
+        d_noise_values = self.d_ngen.grid_sample(grid_coords_3d, grid_shape_3d)
+        d_values = np.zeros(grid_shape_3d)
+
+        c_levels = np.empty(grid_shape_2d)
+        t_levels = np.empty(grid_shape_2d)
+        h_levels = np.empty(grid_shape_2d)
+        e_levels = np.empty(grid_shape_2d)
+        pv_levels = np.empty(grid_shape_2d)
+
+        tallest_height = 0
+        lowest_height = CHUNK.HEIGHT
+
+        index = 0
+        for x in CHUNK.WIDTH_RANGE:
+            for z in CHUNK.WIDTH_RANGE:
+                continentalness: float = c_noise_values[z][x]
+                temperature: float = t_noise_values[z][x]
+                humidity: float = h_noise_values[z][x]
+                erosion: float = e_noise_values[z][x]
+                weirdness: float = w_noise_values[z][x]
+                peak_valley_value = pv_values[z][x] = calculate_peak_valley_value(weirdness)
+                base_height = th_values[z][x] = calculate_terrain_height(
+                    continentalness, erosion, peak_valley_value
+                )
+                # new_limits = False
+                # if base_height > tallest_height:
+                #     tallest_height = base_height
+                #     new_limits = True
+                # if tallest_height >= CHUNK.HEIGHT:
+                #     raise RuntimeError(f"Base Terrain Height ({base_height}) Too High!")
+                #
+                # if base_height < lowest_height:
+                #     lowest_height = base_height
+                #     new_limits = True
+                # if lowest_height < 0:
+                #     raise RuntimeError(f"Base Terrain Height ({base_height}) Too Low!")
+
+                # continentalness_level = c_levels[z][x] = get_continentalness_level(continentalness)
+                # temperature_level = t_levels[z][x] = get_temperature_level(temperature)
+                # humidty_level = h_levels[z][x] = get_humidity_level(humidity)
+                # erosion_level = e_levels[z][x] = get_erosion_level(erosion)
+                # peak_valley_level = pv_levels[z][x] = get_peak_valley_level(peak_valley_value)
+
+                # biome_params = BiomeParams(
+                #     temperature,
+                #     humidity,
+                #     continentalness,
+                #     erosion,
+                #     weirdness,
+                #     1.0
+                # )
+                # biome_values[z][x] = get_biome_id(biome_params)
+
+                for y in CHUNK.HEIGHT_RANGE:
+                    density = d_noise_values[y][z][x]
+
+                    d_values[y][z][x] = density_adjusted = calculate_density(
+                        density,
+                        y,
+                        base_height
+                    )
+                    if density_adjusted > 0:  # Solid Block
+                        chunk.set_block(x, y, z, BlockID.Stone)
+                    else:
+                        chunk.set_block(x, y, z, BlockID.Air)
+
+                    block = chunk.blocks[y][z][x]
+                    chunk.block_face_ids[index] = block.face_ids
+                    chunk.block_face_tex_ids[index] = block.face_tex_ids
+                    chunk.block_face_tex_size_ids[index] = block.face_tex_sizes
+                    block.pos += glm.vec3(x, y, z)
+                    block.initialize(chunk)
+                    chunk.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
+                    index += 1
+        chunk.pos += CHUNK.EXTENTS_HALF

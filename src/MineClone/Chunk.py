@@ -4,11 +4,10 @@ from __future__ import annotations
 from io import BytesIO
 import zlib
 
-
-
 from Block import *
 from Entity import *
 from Biome import *
+from Generation import TerrainGenerator
 
 from dataclasses import dataclass, field
 from collections import deque
@@ -80,8 +79,7 @@ def _decompress_chunk_data(compressed_data, compression_type):
 NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
 
 
-ngen: Optional[NoiseGen] = None
-
+chunk_gen = TerrainGenerator(42)
 @dataclass
 class Chunk(MCPhys, aabb=CHUNK.AABB):
     blocks: Tuple[Tuple[Tuple[Block, ...], ...], ...] = field(
@@ -149,41 +147,42 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
         offset_xz = REGION.CHUNK_OFFSETS[self.index[1]][self.index[0]]
         self.pos = self.region.pos.xyz + glm.vec3(offset_xz[0], 0, offset_xz[1])
-        self.pos -= CHUNK.EXTENTS_HALF
-
-        for y, section in enumerate(self.blocks):
-            y_index = y * CHUNK.SECTION_NUM_BLOCKS
-            for z, yz_plane in enumerate(section):
-                z_index = z * CHUNK.WIDTH
-                for x, block in enumerate(yz_plane):
-                    index: int = y_index + z_index + x
-                    if not self._from_nbt:
-                        height = self.height_map[z][x]
-                        if height is None:
-                            height = self.height_map[z][x] = self.generate_height(self.pos.x + x, self.pos.z + z)
-
-                        if y <= height:
-                            if y < height - 4:
-                                block.set(BlockID.Stone)
-                            elif y < height - 1:
-                                block.set(BlockID.Dirt)
-                            else:
-                                block.set(BlockID.Grass)
-
-                    self.block_face_ids[index] = block.face_ids
-                    self.block_face_tex_ids[index] = block.face_tex_ids
-                    self.block_face_tex_size_ids[index] = block.face_tex_sizes
-                    block.pos += glm.vec3(x, y, z)
-                    block.initialize(self)
-                    self.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
-                    # self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
-            # quit()
-            # if z == 1 and x == 1:
-            #    quit()
-        self.pos += CHUNK.EXTENTS_HALF
+        chunk_gen.gen_chunk(self)
+        # for y, section in enumerate(self.blocks):
+        #     y_index = y * CHUNK.SECTION_NUM_BLOCKS
+        #     for z, yz_plane in enumerate(section):
+        #         z_index = z * CHUNK.WIDTH
+        #         for x, block in enumerate(yz_plane):
+        #             index: int = y_index + z_index + x
+        #             if not self._from_nbt:
+        #                 height = self.height_map[z][x]
+        #                 if height is None:
+        #                     height = self.height_map[z][x] = self.generate_height(self.pos.x + x, self.pos.z + z)
+        #
+        #                 if y <= height:
+        #                     if y < height - 4:
+        #                         block.set(BlockID.Stone)
+        #                     elif y < height - 1:
+        #                         block.set(BlockID.Dirt)
+        #                     else:
+        #                         block.set(BlockID.Grass)
+        #
+        #             self.block_face_ids[index] = block.face_ids
+        #             self.block_face_tex_ids[index] = block.face_tex_ids
+        #             self.block_face_tex_size_ids[index] = block.face_tex_sizes
+        #             block.pos += glm.vec3(x, y, z)
+        #             block.initialize(self)
+        #             self.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
+        #             # self.block_instances[block.index] = NMM(block.pos, s=glm.vec3(0.5))
+        #     # quit()
+        #     # if z == 1 and x == 1:
+        #     #    quit()
 
         self.enqueue_update()
         self.initialized = True
+
+    def set_block(self, x: int, y: int, z: int, block_id: Union[int, BlockID]):
+        self.blocks[y][z][x].set(block_id)
 
     def generate_height(self, x: float, z: float) -> int:
         return CHUNK.HEIGHT * ngen.sample_2d(x, z)

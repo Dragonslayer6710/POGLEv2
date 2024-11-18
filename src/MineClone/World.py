@@ -53,7 +53,6 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     def __post_init__(self):
         super().__post_init__()
-        Chunk.ngen = NoiseGen(_seed=42)
 
         self.file_path = f"{self.file_location}\\{self.world_name}"
         del self.file_location

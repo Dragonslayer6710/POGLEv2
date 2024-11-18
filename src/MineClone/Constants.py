@@ -1,10 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Tuple, List, Union, Optional
 
 import numpy as np
+import glm
 
-from Generation import *
 from POGLE.Physics.Collisions import AABB
 
 
@@ -58,7 +58,7 @@ class _CHUNK(_Constants):
         ]
         self.LOWEST_Y = LOWEST_Y
 
-CHUNK = _CHUNK(16, 16, 0)
+
 
 
 @dataclass
@@ -93,7 +93,6 @@ class _REGION(_Constants):
         # quit()
 
 
-REGION = _REGION(32)
 
 
 @dataclass
@@ -165,10 +164,6 @@ class _WORLD(_Constants):
         self.SURFACE_HEIGHT = 64
         self.BIOME_VARIATION = 10
 
-
-WORLD = _WORLD(3, 19, 3)
-
-
 def w_to_wr(w: Union[glm.vec2, glm.ivec2, glm.ivec3, glm.vec3]) -> glm.ivec2:
     if len(w) == 3:
         return w_to_wr(glm.vec2(w.x, w.z) if isinstance(w, glm.vec3) else glm.ivec2(w.x, w.z))
@@ -188,3 +183,7 @@ def w_to_cb(w: Union[glm.ivec3, glm.vec3]) -> glm.ivec3:
         w = glm.vec3(w)
     w_xz: glm.vec2 = (w.xz + WORLD.BLOCK_WIDTH) % CHUNK.WIDTH
     return glm.ivec3(w_xz[0], w.y, w_xz[1])
+
+CHUNK = _CHUNK(16, 128, 0)
+REGION = _REGION(32)
+WORLD = _WORLD(3, 19, 3)
