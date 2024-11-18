@@ -3,40 +3,42 @@ import random
 import numpy as np
 from Biome import *
 
-width, height = 256, 384
+width, height = 16, 384
 
 known_seed = True
 seed = 42 if known_seed else random.randint(0, 1_000_000)
 
+c_ngen = ContinentalNoiseGenerator(seed)
+t_ngen = TempNoiseGen(seed + 1)
+h_ngen = HumidNoiseGen(seed + 2)
+e_ngen = EroNoiseGen(seed + 3)
+w_ngen = WeirdNoiseGen(seed + 4)
+d_ngen = DenseNoiseGen(seed + 5)
+
+c_level_values = np.empty((width, width))
+
+t_level_values = np.empty((width, width))
+
+h_level_values = np.empty((width, width))
+
+e_level_values = np.empty((width, width))
+
+pv_noise_values = np.empty((width, width))
+pv_level_values = np.empty((width, width))
+
+th_values = np.empty((width, width))
+
+d_values = np.empty((height, width, width))
+is_solid_values = np.empty((height, width, width))
+
+
 def one_at_a_time():
-    c_ngen = ContinentalNoiseGenerator(seed)
     c_noise_values = np.empty((width, width))
-    c_noise_values_2 = np.empty((width, width))
-    c_level_values = np.empty((width, width))
-
-    t_ngen = TempNoiseGen(seed + 1)
     t_noise_values = np.empty((width, width))
-    t_level_values = np.empty((width, width))
-
-    h_ngen = HumidNoiseGen(seed + 2)
     h_noise_values = np.empty((width, width))
-    h_level_values = np.empty((width, width))
-
-    e_ngen = EroNoiseGen(seed + 3)
     e_noise_values = np.empty((width, width))
-    e_level_values = np.empty((width, width))
-
-    w_ngen = WeirdNoiseGen(seed + 4)
     w_noise_values = np.empty((width, width))
-    pv_noise_values = np.empty((width, width))
-    pv_level_values = np.empty((width, width))
-
-    th_values = np.empty((width, width))
-
-    d_ngen = DenseNoiseGen(seed + 5)
     d_noise_values = np.empty((height, width, width))
-    d_values = np.empty((height, width, width))
-    is_solid_values = np.empty((height, width, width))
 
     tallest_height = 0
     lowest_height = height
@@ -101,17 +103,29 @@ def one_at_a_time():
                 )
                 is_solid_values[y][z][x] = density > 0
 
-    plot_3d_isometric(is_solid_values)
-
-
 
 def all_at_once():
-    global c_noise_values, t_noise_values, h_noise_values, e_noise_values, w_noise_values
-    c_noise_values = c_ngen.sample_grid(width // 2, width, width // 2, width)
-    t_noise_values = t_ngen.sample_grid(width // 2, width, width // 2, width)
-    h_noise_values = h_ngen.sample_grid(width // 2, width, width // 2, width)
-    e_noise_values = e_ngen.sample_grid(width // 2, width, width // 2, width)
-    w_noise_values = w_ngen.sample_grid(width // 2, width, width // 2, width)
+    base_coords = [width // 2, width // 2] # if z is None else [x, y, z]
+    sizes = [width, width] # if z is None else [x_size, y_size, z_size]
+
+    # Compute the half spread for all axes
+    spread = 1.0
+    half_spread = spread / 2
+
+    # Generate coordinate ranges for each axis
+    ranges = [np.linspace(coord - half_spread, coord + half_spread, size) for coord, size in
+              zip(base_coords, sizes)]
+
+    # Generate a meshgrid and flatten it
+    grids = np.meshgrid(*ranges, indexing='ij')
+    flattened_coords = np.stack([g.ravel() for g in grids]).astype(np.float32)
+
+    c_noise_values = c_ngen.sample_grid(flattened_coords, (width, width))
+    t_noise_values = t_ngen.sample_grid(flattened_coords, (width, width))
+    h_noise_values = h_ngen.sample_grid(flattened_coords, (width, width))
+    e_noise_values = e_ngen.sample_grid(flattened_coords, (width, width))
+    w_noise_values = w_ngen.sample_grid(flattened_coords, (width, width))
+
     for x in range(width):
         for z in range(width):
             c_level_values[z][x] = get_continentalness_level(c_noise_values[z][x])
@@ -119,11 +133,11 @@ def all_at_once():
             h_level_values[z][x] = get_humidity_level(h_noise_values[z][x])
             e_level_values[z][x] = get_erosion_level(e_noise_values[z][x])
 
-# from timeit import timeit
-# print(timeit(one_at_a_time, number=10))
-# print(timeit(all_at_once, number=10))
-# quit()
-one_at_a_time()
+from timeit import timeit
+print(timeit(one_at_a_time, number=10))
+print(timeit(all_at_once, number=10))
+quit()
+# plot_3d_isometric(is_solid_values)
 
 # plot_noise_grid(c_noise_values, title="Continentalness", normalized=True)
 # plot_noise_grid(c_level_values, title="Continentalness Leveled")

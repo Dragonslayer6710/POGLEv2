@@ -41,36 +41,9 @@ class NoiseGenerator:
     def sample(self, x: float, y: float, z: Optional[float] = None) -> float:
         return self._fnl.get_noise(x, y, z)
 
-    def sample_grid(self, x: float, x_size: int, y: float, y_size: int, z: Optional[float] = None,
-                    z_size: Optional[int] = None):
-
-        cache_key = (x, x_size, y, y_size, z, z_size)
-        cache_value = _grids_cache.get(cache_key, None)
-        if cache_value is None:
-            # Initialize base coordinates and sizes
-            base_coords = [x, y] if z is None else [x, y, z]
-            sizes = [x_size, y_size] if z is None else [x_size, y_size, z_size]
-
-            # Compute the half spread for all axes
-            spread = 1.0
-            half_spread = spread / 2
-
-            # Generate coordinate ranges for each axis
-            ranges = [np.linspace(coord - half_spread, coord + half_spread, size) for coord, size in
-                      zip(base_coords, sizes)]
-
-            # Generate a meshgrid and flatten it
-            grids = np.meshgrid(*ranges, indexing='ij')
-            flattened_coords = np.stack([g.ravel() for g in grids]).astype(np.float32)
-
-            _grids_cache[cache_key] = flattened_coords, sizes
-        else:
-            flattened_coords, sizes = cache_value
-        # Generate samples from the coordinates
-        samples = self._fnl.gen_from_coords(flattened_coords)
-
+    def sample_grid(self, coords: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
         # Reshape the samples into the grid dimensions
-        return samples.reshape(sizes)
+        return self._fnl.gen_from_coords(coords).reshape(shape)
 
 class ContinentalNoiseGenerator(NoiseGenerator):
     def __init__(self, seed: Optional[int] = None, _scale: float = 1.0):
