@@ -66,28 +66,28 @@ def one_at_a_time():
                 continentalness, erosion, peak_valley_value
             )
 
-            new_limits = False
-            if base_height > tallest_height:
-                tallest_height = base_height
-                new_limits = True
-            if tallest_height >= 384:
-                raise RuntimeError(f"Base Terrain Height ({base_height}) Too High!")
+            # new_limits = False
+            # if base_height > tallest_height:
+            #     tallest_height = base_height
+            #     new_limits = True
+            # if tallest_height >= 384:
+            #     raise RuntimeError(f"Base Terrain Height ({base_height}) Too High!")
+            #
+            # if base_height < lowest_height:
+            #     lowest_height = base_height
+            #     new_limits = True
+            # if lowest_height < 0:
+            #     raise RuntimeError(f"Base Terrain Height ({base_height}) Too Low!")
 
-            if base_height < lowest_height:
-                lowest_height = base_height
-                new_limits = True
-            if lowest_height < 0:
-                raise RuntimeError(f"Base Terrain Height ({base_height}) Too Low!")
-
-            biome_params = BiomeParams(
-                t_noise_values[z][x],
-                h_noise_values[z][x],
-                c_noise_values[z][x],
-                e_noise_values[z][x],
-                w_noise_values[z][x],
-                1.0
-            )
-            biome_values[z][x] = get_biome_id(biome_params)
+            # biome_params = BiomeParams(
+            #     t_noise_values[z][x],
+            #     h_noise_values[z][x],
+            #     c_noise_values[z][x],
+            #     e_noise_values[z][x],
+            #     w_noise_values[z][x],
+            #     1.0
+            # )
+            # biome_values[z][x] = get_biome_id(biome_params)
 
             def normalize(x, min, max):
                 # Normalize y to [0, 1]
@@ -95,6 +95,7 @@ def one_at_a_time():
 
             for y in range(height):
                 d_noise_values[y][z][x] = d_ngen.sample(x, y, z)
+                continue
                 # bh_normal = normalize(base_height - y, 0, height-1)
                 d_values[y][z][x] = density = calculate_density(
                     d_noise_values[y][z][x],
@@ -105,27 +106,20 @@ def one_at_a_time():
 
 
 def all_at_once():
-    base_coords = [width // 2, width // 2] # if z is None else [x, y, z]
-    sizes = [width, width] # if z is None else [x_size, y_size, z_size]
+    origin_2d = glm.vec2(width / 2)
+    extents_2d = glm.ivec2(width)
+    grid_coords_2d, grid_shape_2d = get_grid_coords(origin_2d, extents_2d)
 
-    # Compute the half spread for all axes
-    spread = 1.0
-    half_spread = spread / 2
+    c_noise_values = c_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+    t_noise_values = t_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+    h_noise_values = h_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+    e_noise_values = e_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
+    w_noise_values = w_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
 
-    # Generate coordinate ranges for each axis
-    ranges = [np.linspace(coord - half_spread, coord + half_spread, size) for coord, size in
-              zip(base_coords, sizes)]
-
-    # Generate a meshgrid and flatten it
-    grids = np.meshgrid(*ranges, indexing='ij')
-    flattened_coords = np.stack([g.ravel() for g in grids]).astype(np.float32)
-
-    c_noise_values = c_ngen.sample_grid(flattened_coords, (width, width))
-    t_noise_values = t_ngen.sample_grid(flattened_coords, (width, width))
-    h_noise_values = h_ngen.sample_grid(flattened_coords, (width, width))
-    e_noise_values = e_ngen.sample_grid(flattened_coords, (width, width))
-    w_noise_values = w_ngen.sample_grid(flattened_coords, (width, width))
-
+    grid_coords_3d, grid_shape_3d = get_grid_coords(
+        glm.vec3(height / 2, origin_2d), glm.ivec3(height, extents_2d)
+    )
+    d_noise_values = d_ngen.grid_sample(grid_coords_3d, grid_shape_3d)
     for x in range(width):
         for z in range(width):
             c_level_values[z][x] = get_continentalness_level(c_noise_values[z][x])
@@ -134,8 +128,9 @@ def all_at_once():
             e_level_values[z][x] = get_erosion_level(e_noise_values[z][x])
 
 from timeit import timeit
-print(timeit(one_at_a_time, number=10))
-print(timeit(all_at_once, number=10))
+num_tests = 10
+print(timeit(one_at_a_time, number=num_tests))
+print(timeit(all_at_once, number=num_tests))
 quit()
 # plot_3d_isometric(is_solid_values)
 

@@ -1,5 +1,6 @@
 import random
 import numpy as np
+import glm
 import matplotlib.pyplot as plt
 
 from dataclasses import dataclass
@@ -10,7 +11,35 @@ from pyfastnoiselite.pyfastnoiselite import (
 
 from MineClone.Biome import get_temperature_level, get_erosion_level
 
-_grids_cache: Dict[Tuple, Tuple[np.ndarray, Tuple]] = {}
+
+def get_grid_coords(origin: Union[glm.vec2, glm.vec3],
+                    extents: Union[glm.ivec2, glm.ivec3]) -> Tuple[np.ndarray, Tuple[int, ...]]:
+    if not isinstance(origin, Union[glm.vec2, glm.vec3]):
+        raise TypeError("origin must be a glm.vec2 or glm.vec3")
+
+    if not isinstance(extents, Union[glm.ivec2, glm.ivec3]):
+        if isinstance(extents, Union[glm.vec2, glm.vec3]):
+            if isinstance(extents, glm.vec2):
+                extents = glm.ivec2(extents)
+            else:
+                extents = glm.ivec3(extents)
+        else:
+            raise TypeError("extents must be a glm.ivec2 or glm.ivec3")
+
+    # Compute the half spread for all axes
+    spread = 1.0
+    half_spread = spread / 2
+
+    min_point = origin - half_spread
+    max_point = origin + half_spread
+
+    # Generate coordinate ranges for each axis
+    ranges = [np.linspace(min_point[i], max_point[i], extents[i]) for i in range(len(origin))]
+
+    # Generate a meshgrid and flatten it
+    grids = np.meshgrid(*ranges, indexing='ij')
+    return np.stack([g.ravel() for g in grids]).astype(np.float32), tuple(extent for extent in extents)
+
 
 @dataclass
 class NoiseGenerator:
@@ -41,9 +70,10 @@ class NoiseGenerator:
     def sample(self, x: float, y: float, z: Optional[float] = None) -> float:
         return self._fnl.get_noise(x, y, z)
 
-    def sample_grid(self, coords: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
+    def grid_sample(self, coords: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
         # Reshape the samples into the grid dimensions
         return self._fnl.gen_from_coords(coords).reshape(shape)
+
 
 class ContinentalNoiseGenerator(NoiseGenerator):
     def __init__(self, seed: Optional[int] = None, _scale: float = 1.0):
@@ -310,8 +340,7 @@ def plot_3d_isometric(array_3d):
     # Create a meshgrid for the coordinates
     z, y, x = array_3d.nonzero()  # Get the coordinates of non-zero points
     values = array_3d[z, y, x]  # Extract the corresponding density values
-    gradient = np.sqrt(x**2 + y**2 + z**2)
-
+    gradient = np.sqrt(x ** 2 + y ** 2 + z ** 2)
 
     # Set up the figure and 3D axis
     fig = plt.figure(figsize=(8, 8))
@@ -331,6 +360,7 @@ def plot_3d_isometric(array_3d):
 
     plt.show()
 
+
 def plot_3d_isometric(array_3d):
     """
     Plots the whole 3D array in an isometric view with colors based on the distance
@@ -345,7 +375,7 @@ def plot_3d_isometric(array_3d):
 
     # Calculate a gradient for coloring based on x, y, z positions
     # This can be a simple Euclidean distance from the origin (0, 0, 0)
-    gradient = np.sqrt(x**2 + y**2 + z**2)
+    gradient = np.sqrt(x ** 2 + y ** 2 + z ** 2)
 
     # Set up the figure and 3D axis
     fig = plt.figure(figsize=(8, 8))
