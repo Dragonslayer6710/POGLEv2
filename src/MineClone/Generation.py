@@ -1,6 +1,9 @@
 from __future__ import annotations
+from scipy.interpolate import UnivariateSpline
 
 from dataclasses import dataclass
+
+import numpy as np
 from matplotlib.colors import Normalize, ListedColormap, BoundaryNorm
 import matplotlib.pyplot as plt
 
@@ -15,114 +18,16 @@ if TYPE_CHECKING:
     from Chunk import Chunk
 
 
-def get_temperature_level(temperature: float) -> int:
-    if temperature <= -0.45:
-        return 0
-    elif temperature <= -0.15:
-        return 1
-    elif temperature <= 0.2:
-        return 2
-    elif temperature <= 0.55:
-        return 3
-    else:
-        return 4
-
-
-def get_humidity_level(humidty: float) -> int:
-    if humidty <= -0.35:
-        return 0
-    elif humidty <= -0.1:
-        return 1
-    elif humidty <= 0.1:
-        return 2
-    elif humidty <= 0.3:
-        return 3
-    else:
-        return 4
-
-
-class Continent(Renum):
-    MushroomFields = 0
-    DeepOcean = 1
-    Ocean = 2
-    Coast = 3
-    NearInland = 4
-    MidInland = 5
-    FarInland = 6
-
-
-def get_continentalness_level(continentalness: float) -> Continent:
-    if continentalness <= -1.05:
-        return Continent.MushroomFields
-    elif continentalness <= -0.455:
-        return Continent.DeepOcean
-    elif continentalness <= -0.19:
-        return Continent.Ocean
-    elif continentalness <= -0.11:
-        return Continent.Coast
-    elif continentalness <= 0.03:
-        return Continent.NearInland
-    elif continentalness <= 0.3:
-        return Continent.MidInland
-    else:
-        return Continent.FarInland
-
-
 calculate_continent_base_height = UnivariateSpline(
     [-1, -0.455, -0.19, -0.11, 0.03, 0.3, 1.0],
     [62, 30, 50, 62, 64, 70, 100]
 )
 
 
-def get_erosion_level(erosion: float) -> int:
-    if erosion <= -0.78:
-        return 0
-    elif erosion <= -0.375:
-        return 1
-    elif erosion <= -0.2225:
-        return 2
-    elif erosion <= 0.05:
-        return 3
-    elif erosion <= 0.45:
-        return 4
-    elif erosion <= 0.55:
-        return 5
-    else:
-        return 6
-
-
 calculate_erosion_modifier = UnivariateSpline(
     [-1, -0.78, -0.375, -0.2225, 0.05, 0.45, 0.55, 1.0],
     [1, 0.98, 0.94, 0.92, 0.9, 0.87, 0.85, 0.8]
 )
-
-
-class PeakValley(Renum):
-    Valleys = 0
-    Low = 1
-    Mid = 2
-    High = 3
-    Peaks = 4
-
-
-PV = PeakValley
-
-
-def calculate_peak_valley_value(weirdness_value: float):
-    return 1 - abs((3 * abs(weirdness_value)) - 2)
-
-
-def get_peak_valley_level(peak_valley_value: float) -> PV:
-    if peak_valley_value <= -0.85:
-        return PV.Valleys
-    elif peak_valley_value <= -0.6:
-        return PV.Low
-    elif peak_valley_value <= 0.2:
-        return PV.Mid
-    elif peak_valley_value <= 0.7:
-        return PV.High
-    else:
-        return PV.Peaks
 
 
 calculate_peak_valley_modifier = UnivariateSpline(
@@ -135,28 +40,12 @@ def calculate_terrain_height(
         continentalness: float,
         erosion: float,
         peak_valley_value: float) -> float:
-    return (64#calculate_continent_base_height(continentalness)
+    return (calculate_continent_base_height(continentalness)
             * calculate_erosion_modifier(erosion)
             + calculate_peak_valley_modifier(peak_valley_value))
 
-@dataclass
-class BiomeParams:
-    temperature: float
-    humidity: float
-    continentalness: float
-    erosion: float
-    weirdness: float
-    depth: float
 
-    def __post_init__(self):
-        self.value_peak_valley: float = calculate_peak_valley_value(self.weirdness)
 
-        self.level_temperature: int = get_temperature_level(self.temperature)
-        self.level_humidty: int = get_humidity_level(self.humidity)
-        self.level_erosion: int = get_erosion_level(self.erosion)
-
-        self.continent: Continent = get_continentalness_level(self.continentalness)
-        self.peak_valley: PeakValley = get_peak_valley_level(self.value_peak_valley)
 
 def get_grid_coords(origin: Union[glm.vec2, glm.vec3],
                     extents: Union[glm.ivec2, glm.ivec3]) -> Tuple[np.ndarray, Tuple[int, ...]]:
@@ -307,6 +196,7 @@ class DensityNoiseGenerator(NoiseGenerator):
         return super().sample(x, y, z)
 
 
+
 def calculate_density(density_noise: float, y: float, base_height: float = 0, height_bias: float = 1) -> float:
     if y == base_height:
         return density_noise
@@ -419,7 +309,6 @@ def plot_noise_grid(noise_values: np.ndarray, cmap: str = "gray", title: str = "
         plt.imshow(noise_values, cmap=biome_cmap, norm=biome_norm)
     else:
         plt.imshow(noise_values, cmap=cmap)
-
     # Add a colorbar and title
     plt.colorbar()
     plt.title(title)
@@ -471,25 +360,119 @@ def plot_cross_section(array_3d, slice_type="xy", slice_index=0):
     plt.show()
 
 
-def plot_3d_isometric(array_3d):
+def plot_3d_isometric(array_3ds: Union[np.ndarray, List[np.ndarray]]):
     """
-    Plots the whole 3D array in an isometric view with colors based on the distance
+    Plots one or more 3D arrays in an isometric view with colors based on the distance
     of each point from the origin or based on the x, y, z positions.
 
     Parameters:
-    - array_3d: 3D numpy array of data (density values).
+    - array_3ds: A single 3D numpy array or a list of 3D numpy arrays of data (density values).
     """
-    # Create a meshgrid for the coordinates
-    y, z, x = array_3d.nonzero()  # Get the coordinates of non-zero points
-    values = array_3d[y, z, x]  # Extract the corresponding density values
+    # If a single array is provided, convert it to a list for uniform processing
+    if isinstance(array_3ds, np.ndarray):
+        array_3ds = [array_3ds]
+        # If a single array is provided, convert it to a list for uniform processing
+        if isinstance(array_3ds, np.ndarray):
+            array_3ds = [array_3ds]
+
+        # Set up the figure and axis grid based on the number of arrays
+        num_arrays = len(array_3ds)
+        cols = int(np.ceil(np.sqrt(num_arrays)))
+        rows = int(np.ceil(num_arrays / cols))
+        fig, axs = plt.subplots(rows, cols, subplot_kw={'projection': '3d'}, figsize=(6 * cols, 6 * rows))
+
+        # Flatten axs to simplify indexing
+        if num_arrays == 1:
+            axs = [axs]  # Ensure axs is a list
+        else:
+            axs = axs.flatten()
+
+        for idx, (array_3d, ax) in enumerate(zip(array_3ds, axs)):
+            # Get non-zero points and their values
+            y, z, x = array_3d.nonzero()
+            values = array_3d[y, z, x]
+
+            # Calculate a gradient for coloring based on x, y, z positions
+            gradient = np.sqrt(x ** 2 + y ** 2 + z ** 2)
+
+            # Plot the points as a scatter plot with coloring based on gradient
+            sc = ax.scatter(x, z, y, c=gradient, cmap='viridis', marker='o', alpha=0.6)
+
+            # Set the labels and title
+            ax.set_xlabel("X-axis")
+            ax.set_ylabel("Z-axis")
+            ax.set_zlabel("Y-axis")
+            ax.set_title(f"Array {idx + 1}")
+
+            # Adjust view angle to give isometric perspective
+            ax.view_init(azim=45, elev=30)
+
+        # Hide unused subplots
+        for ax in axs[num_arrays:]:
+            ax.set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+
+
+def plot_3d_isometric(
+        array_3ds: Union[np.ndarray, List[np.ndarray]],
+        show_separately: bool = False
+):
+    """
+    Plots one or more 3D arrays in an isometric view with colors based on the distance
+    of each point from the origin or based on the x, y, z positions.
+
+    Parameters:
+    - array_3ds: A single 3D numpy array or a list of 3D numpy arrays of data (density values).
+    - show_separately: If True, each array is plotted in a separate figure. Otherwise, they are
+      shown as subplots in a single figure.
+    """
+    # If a single array is provided, convert it to a list for uniform processing
+    if isinstance(array_3ds, np.ndarray):
+        array_3ds = [array_3ds]
+
+    if show_separately:
+        # Create a separate figure for each array
+        for idx, array_3d in enumerate(array_3ds):
+            fig = plt.figure(figsize=(8, 8))
+            ax = fig.add_subplot(111, projection='3d')
+            _plot_single_3d_array(array_3d, ax, title=f"Array {idx + 1}")
+            plt.show()
+    else:
+        # Set up a single figure with subplots for all arrays
+        num_arrays = len(array_3ds)
+        cols = int(np.ceil(np.sqrt(num_arrays)))
+        rows = int(np.ceil(num_arrays / cols))
+        fig, axs = plt.subplots(rows, cols, subplot_kw={'projection': '3d'}, figsize=(6 * cols, 6 * rows))
+
+        # Flatten axs to simplify indexing
+        if num_arrays == 1:
+            axs = [axs]  # Ensure axs is a list
+        else:
+            axs = axs.flatten()
+
+        for idx, (array_3d, ax) in enumerate(zip(array_3ds, axs)):
+            _plot_single_3d_array(array_3d, ax, title=f"Array {idx + 1}")
+
+        # Hide unused subplots
+        for ax in axs[num_arrays:]:
+            ax.set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+
+
+def _plot_single_3d_array(array_3d, ax, title="3D Isometric View"):
+    """
+    Helper function to plot a single 3D array on the provided axis.
+    """
+    # Get non-zero points and their values
+    y, z, x = array_3d.nonzero()
+    values = array_3d[y, z, x]
 
     # Calculate a gradient for coloring based on x, y, z positions
-    # This can be a simple Euclidean distance from the origin (0, 0, 0)
     gradient = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-
-    # Set up the figure and 3D axis
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection='3d')
 
     # Plot the points as a scatter plot with coloring based on gradient
     sc = ax.scatter(x, z, y, c=gradient, cmap='viridis', marker='o', alpha=0.6)
@@ -498,20 +481,31 @@ def plot_3d_isometric(array_3d):
     ax.set_xlabel("X-axis")
     ax.set_ylabel("Z-axis")
     ax.set_zlabel("Y-axis")
-    ax.set_title("3D Isometric View of Array with Gradient Coloring")
+    ax.set_title(title)
 
-    # Set the aspect ratio to be equal to ensure the isometric view
-    ax.view_init(azim=45, elev=30)  # Adjust view angle to give isometric perspective
+    # Adjust view angle to give isometric perspective
+    ax.view_init(azim=-90, elev=30)
 
-    # Add a color bar to show the gradient scale
-    fig.colorbar(sc, ax=ax, shrink=0.5, aspect=10)
+    max_y, max_z, max_x = array_3d.shape
+    ax.set_xlim(0, max_x)
+    ax.set_ylim(0, max_z)
+    ax.set_zlim(0, max_y)
 
-    plt.show()
+
+def get_biome_block_id(biome: Biome, y: int, surface_y: int) -> BlockID:
+    # TODO: Bedrock level
+    if surface_y - 4 < y < surface_y:
+        return BlockID.Dirt
+    elif y == surface_y:
+        return BlockID.Grass
+
+
+    return BlockID.Stone
 
 
 class TerrainGenerator:
-    def __init__(self, seed: int):
-        self.seed: int = seed
+    def __init__(self, seed: Optional[int] = None):
+        self.seed: int = seed if seed is not None else random.randint(0, 2 ** 32 - 1)
         self.c_ngen = ContinentalNoiseGenerator(self.seed)
         self.t_ngen = TempNoiseGen(self.seed + 1)
         self.h_ngen = HumidNoiseGen(self.seed + 2)
@@ -521,10 +515,19 @@ class TerrainGenerator:
 
         self.chunk_size = CHUNK.EXTENTS.yzx
 
-    def gen_chunk(self, chunk: Chunk):
-        grid_coords_2d, grid_shape_2d = get_grid_coords(chunk.pos.yz, self.chunk_size.yz)
-        grid_coords_3d, grid_shape_3d = get_grid_coords(chunk.pos.yzx, self.chunk_size)
-        chunk.pos -= CHUNK.EXTENTS_HALF
+    def gen_chunk(self, chunk: Optional[Chunk] = None, chunk_pos: Optional[glm.vec3] = None) -> Optional[np.ndarray]:
+        if chunk is not None:
+            chunk_pos = chunk.pos
+        elif chunk_pos is None:
+            raise ValueError("Either 'chunk' or 'chunk_pos' must be provided.")
+        grid_coords_2d, grid_shape_2d = get_grid_coords(chunk_pos.zx, self.chunk_size.yz)
+        grid_coords_3d, grid_shape_3d = get_grid_coords(chunk_pos.yzx, self.chunk_size)
+        # print(f"z: {grid_coords_2d[0][0]}, x:{grid_coords_2d[1][0]}")
+        # print(f"z: {grid_coords_2d[0][-1]}, x:{grid_coords_2d[1][-1]}")
+        if chunk_pos is not None:
+            biome_values: np.ndarray = np.zeros(grid_shape_2d)
+            solid_values: np.ndarray = np.zeros(grid_shape_3d)
+        chunk_pos -= CHUNK.EXTENTS_HALF
 
         c_noise_values: np.ndarray = self.c_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
         t_noise_values: np.ndarray = self.t_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
@@ -548,6 +551,7 @@ class TerrainGenerator:
         lowest_height = CHUNK.HEIGHT
 
         index = 0
+        biome_talley: Dict[BiomeID, int] = {}
         for x in CHUNK.WIDTH_RANGE:
             for z in CHUNK.WIDTH_RANGE:
                 continentalness: float = c_noise_values[z][x]
@@ -572,41 +576,82 @@ class TerrainGenerator:
                 # if lowest_height < 0:
                 #     raise RuntimeError(f"Base Terrain Height ({base_height}) Too Low!")
 
-                # continentalness_level = c_levels[z][x] = get_continentalness_level(continentalness)
-                # temperature_level = t_levels[z][x] = get_temperature_level(temperature)
-                # humidty_level = h_levels[z][x] = get_humidity_level(humidity)
-                # erosion_level = e_levels[z][x] = get_erosion_level(erosion)
-                # peak_valley_level = pv_levels[z][x] = get_peak_valley_level(peak_valley_value)
+                continentalness_level = c_levels[z][x] = get_continentalness_level(continentalness)
+                temperature_level = t_levels[z][x] = get_temperature_level(temperature)
+                humidty_level = h_levels[z][x] = get_humidity_level(humidity)
+                erosion_level = e_levels[z][x] = get_erosion_level(erosion)
+                peak_valley_level = pv_levels[z][x] = get_peak_valley_level(peak_valley_value)
 
-                # biome_params = BiomeParams(
-                #     temperature,
-                #     humidity,
-                #     continentalness,
-                #     erosion,
-                #     weirdness,
-                #     1.0
-                # )
-                # biome_values[z][x] = get_biome_id(biome_params)
+                surface_biome = Biome(
+                    BiomeParams(
+                        temperature,
+                        humidity,
+                        continentalness,
+                        erosion,
+                        weirdness,
+                        0
+                    )
+                )
+                if biome_talley.get(surface_biome.id) is None:
+                    biome_talley[surface_biome.id] = 1
+                else:
+                    biome_talley[surface_biome.id] += 1
+                surface_height = None
+                for y in CHUNK.HEIGHT_RANGE_REVERSE:
+                    block_depth = base_height - y
+                    depth = min(0, block_depth) * (1/128) # increases by this per block below surface
+                    if depth not in [0.0, 1.0]:
+                        biome = Biome(
+                            BiomeParams(
+                                temperature,
+                                humidity,
+                                continentalness,
+                                erosion,
+                                weirdness,
+                                depth
+                            )
+                        )
+                    else:
+                        biome = surface_biome
 
-                for y in CHUNK.HEIGHT_RANGE:
-                    density = d_noise_values[y][z][x]
+                    init_density = d_noise_values[y][z][x]
 
-                    d_values[y][z][x] = density_adjusted = calculate_density(
-                        density,
+                    d_values[y][z][x] = density = calculate_density(
+                        init_density,
                         y,
                         base_height
                     )
-                    if density_adjusted > 0:  # Solid Block
-                        chunk.set_block(x, y, z, BlockID.Stone)
-                    else:
-                        chunk.set_block(x, y, z, BlockID.Air)
+                    if chunk is not None:
+                        chunk.biomes[y][z][x] = biome
 
-                    block = chunk.blocks[y][z][x]
-                    chunk.block_face_ids[index] = block.face_ids
-                    chunk.block_face_tex_ids[index] = block.face_tex_ids
-                    chunk.block_face_tex_size_ids[index] = block.face_tex_sizes
-                    block.pos += glm.vec3(x, y, z)
-                    block.initialize(chunk)
-                    chunk.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
-                    index += 1
-        chunk.pos += CHUNK.EXTENTS_HALF
+                        if density > 0:  # Solid Block
+                            if surface_height is None:
+                                surface_height = y
+                            block_id = get_biome_block_id(biome, y, surface_height)
+                            chunk.set_block(x, y, z, block_id)
+
+                        block = chunk.blocks[y][z][x]
+                        chunk.block_face_ids[index] = block.face_ids
+                        chunk.block_face_tex_ids[index] = block.face_tex_ids
+                        chunk.block_face_tex_size_ids[index] = block.face_tex_sizes
+                        block.pos += glm.vec3(x, y, z)
+                        block.initialize(chunk)
+                        chunk.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
+                        index += 1
+                    else:
+                        biome_values[y][z][x] = biome.id
+                        if density > 0:
+                            solid_values[y][z][x] = True
+
+        chunk_pos += CHUNK.EXTENTS_HALF
+        print(f"\nBiome distribution for position {chunk_pos}: {biome_talley}")
+        if chunk is None:
+            return solid_values
+
+
+if __name__ == "__main__":
+    t_gen = TerrainGenerator(42)
+    a = [t_gen.gen_chunk(chunk_pos=glm.vec3(x, CHUNK.HEIGHT / 2, 0)) for x in [-16, 0, 16]]
+    #
+    # [plot_cross_section(i) for i in a]
+    plot_3d_isometric(a)

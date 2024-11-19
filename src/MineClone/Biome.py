@@ -1,10 +1,125 @@
 from dataclasses import dataclass
-from scipy.interpolate import UnivariateSpline
 
 import nbtlib
 
 from POGLE.Core.Core import Renum
-from Generation import BiomeParams
+
+
+class Continent(Renum):
+    MushroomFields = 0
+    DeepOcean = 1
+    Ocean = 2
+    Coast = 3
+    NearInland = 4
+    MidInland = 5
+    FarInland = 6
+
+
+class PeakValley(Renum):
+    Valleys = 0
+    Low = 1
+    Mid = 2
+    High = 3
+    Peaks = 4
+
+
+PV = PeakValley
+
+
+def get_temperature_level(temperature: float) -> int:
+    if temperature <= -0.45:
+        return 0
+    elif temperature <= -0.15:
+        return 1
+    elif temperature <= 0.2:
+        return 2
+    elif temperature <= 0.55:
+        return 3
+    else:
+        return 4
+
+
+def get_humidity_level(humidty: float) -> int:
+    if humidty <= -0.35:
+        return 0
+    elif humidty <= -0.1:
+        return 1
+    elif humidty <= 0.1:
+        return 2
+    elif humidty <= 0.3:
+        return 3
+    else:
+        return 4
+
+
+def get_continentalness_level(continentalness: float) -> Continent:
+    if continentalness <= -1.05:
+        return Continent.MushroomFields
+    elif continentalness <= -0.455:
+        return Continent.DeepOcean
+    elif continentalness <= -0.19:
+        return Continent.Ocean
+    elif continentalness <= -0.11:
+        return Continent.Coast
+    elif continentalness <= 0.03:
+        return Continent.NearInland
+    elif continentalness <= 0.3:
+        return Continent.MidInland
+    else:
+        return Continent.FarInland
+
+
+def get_erosion_level(erosion: float) -> int:
+    if erosion <= -0.78:
+        return 0
+    elif erosion <= -0.375:
+        return 1
+    elif erosion <= -0.2225:
+        return 2
+    elif erosion <= 0.05:
+        return 3
+    elif erosion <= 0.45:
+        return 4
+    elif erosion <= 0.55:
+        return 5
+    else:
+        return 6
+
+def get_peak_valley_level(peak_valley_value: float) -> PV:
+    if peak_valley_value <= -0.85:
+        return PV.Valleys
+    elif peak_valley_value <= -0.6:
+        return PV.Low
+    elif peak_valley_value <= 0.2:
+        return PV.Mid
+    elif peak_valley_value <= 0.7:
+        return PV.High
+    else:
+        return PV.Peaks
+
+
+def calculate_peak_valley_value(weirdness_value: float):
+    return 1 - abs((3 * abs(weirdness_value)) - 2)
+
+@dataclass
+class BiomeParams:
+    temperature: float
+    humidity: float
+    continentalness: float
+    erosion: float
+    weirdness: float
+    depth: float
+
+    def __post_init__(self):
+        self.value_peak_valley: float = calculate_peak_valley_value(self.weirdness)
+
+        self.level_temperature: int = get_temperature_level(self.temperature)
+        self.level_humidty: int = get_humidity_level(self.humidity)
+        self.level_erosion: int = get_erosion_level(self.erosion)
+
+        self.continent: Continent = get_continentalness_level(self.continentalness)
+        self.peak_valley: PeakValley = get_peak_valley_level(self.value_peak_valley)
+
 
 _last_biome_id: int = -1
 
@@ -901,10 +1016,11 @@ def get_biome_id(biome_params: BiomeParams) -> BiomeID:
             return BiomeID.CavesLush
     elif biome_params.depth == 1.1:
         return BiomeID.DeepDark
-    else:
+    elif biome_params.depth in [0.0, 1.0]:
         if biome_params.continent < Continent.Coast:
             return get_non_inland_biome_id(biome_params)
         return get_surface_biome_id(biome_params)
+    return BiomeID.Null
 
 
 @dataclass

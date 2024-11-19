@@ -17,6 +17,7 @@ class _Constants:
         self.WIDTH_RANGE: range = range(self.WIDTH)
         if self.HEIGHT is not None:
             self.HEIGHT_RANGE: range = range(self.HEIGHT)
+            self.HEIGHT_RANGE_REVERSE: range = range(self.HEIGHT - 1, -1, -1)
         self.EXTENTS: Union[glm.vec2, glm.vec3] = glm.vec2(self.WIDTH) if self.HEIGHT is None \
             else glm.vec3(self.WIDTH, self.HEIGHT, self.WIDTH)
         self.EXTENTS_INT: Union[glm.ivec2, glm.ivec3] = glm.ivec2(self.EXTENTS) if self.HEIGHT is None \
@@ -106,7 +107,9 @@ class _WORLD(_Constants):
         elif not (SPAWN_CHUNK_WIDTH % 2):
             raise RuntimeError(f"World Spawn Chunk Width: {SPAWN_CHUNK_WIDTH} is not acceptable."
                                f" It must be an odd number!")
-
+        elif not (INITIAL_SPAWN_CHUNK_WIDTH % 2):
+            raise RuntimeError(f"Initial World Spawn Chunk Width: {INITIAL_SPAWN_CHUNK_WIDTH} is not acceptable."
+                               f" It must be an odd number!")
         super().__init__(WIDTH)
 
         self.MID_POINT: glm.ivec2 = self.EXTENTS_HALF_INT + 1 - - self.EXTENTS_HALF_INT
@@ -186,4 +189,4 @@ def w_to_cb(w: Union[glm.ivec3, glm.vec3]) -> glm.ivec3:
 
 CHUNK = _CHUNK(16, 128, 0)
 REGION = _REGION(32)
-WORLD = _WORLD(3, 19, 3)
+WORLD = _WORLD(15, 19, 9)

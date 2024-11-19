@@ -79,7 +79,7 @@ def _decompress_chunk_data(compressed_data, compression_type):
 NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
 
 
-chunk_gen = TerrainGenerator(42)
+chunk_gen = TerrainGenerator()
 @dataclass
 class Chunk(MCPhys, aabb=CHUNK.AABB):
     blocks: Tuple[Tuple[Tuple[Block, ...], ...], ...] = field(
@@ -94,13 +94,14 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
     entities: List[Entity] = field(default_factory=list)
     tile_entities: List[TileEntity] = field(default_factory=list)
     height_map: List[List[int]] = field(default_factory=lambda: copy(CHUNK.NULL_HEIGHT_MAP))
-    biome_data: Tuple[Tuple[Block, ...], ...] = field(
-        default_factory=lambda:
-        tuple(
-            tuple(
-                None for x in CHUNK.WIDTH_RANGE
-            ) for z in CHUNK.WIDTH_RANGE
-        )
+    biomes: List[List[List[Optional[Biome], ...], ...]] = field(
+        default_factory=lambda: [
+            [
+                [
+                    None for x in CHUNK.WIDTH_RANGE
+                ] for z in CHUNK.WIDTH_RANGE
+            ] for y in CHUNK.HEIGHT_RANGE
+        ]
     )
 
     _from_nbt: bool = False
@@ -183,9 +184,6 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
     def set_block(self, x: int, y: int, z: int, block_id: Union[int, BlockID]):
         self.blocks[y][z][x].set(block_id)
-
-    def generate_height(self, x: float, z: float) -> int:
-        return CHUNK.HEIGHT * ngen.sample_2d(x, z)
 
     def enqueue_update(self):
         if self._awaiting_update:
