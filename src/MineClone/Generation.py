@@ -505,7 +505,7 @@ def get_biome_block_id(biome: Biome, y: int, surface_y: int) -> BlockID:
 
 class TerrainGenerator:
     def __init__(self, seed: Optional[int] = None):
-        self.seed: int = seed if seed is not None else random.randint(0, 2 ** 32 - 1)
+        self.seed: int = seed if seed is not None else random.randint(0, 2 ** 16 - 1)
         self.c_ngen = ContinentalNoiseGenerator(self.seed)
         self.t_ngen = TempNoiseGen(self.seed + 1)
         self.h_ngen = HumidNoiseGen(self.seed + 2)
@@ -541,14 +541,14 @@ class TerrainGenerator:
         d_noise_values = self.d_ngen.grid_sample(grid_coords_3d, grid_shape_3d)
         d_values = np.zeros(grid_shape_3d)
 
-        c_levels = np.empty(grid_shape_2d)
-        t_levels = np.empty(grid_shape_2d)
-        h_levels = np.empty(grid_shape_2d)
-        e_levels = np.empty(grid_shape_2d)
-        pv_levels = np.empty(grid_shape_2d)
-
-        tallest_height = 0
-        lowest_height = CHUNK.HEIGHT
+        # c_levels = np.empty(grid_shape_2d)
+        # t_levels = np.empty(grid_shape_2d)
+        # h_levels = np.empty(grid_shape_2d)
+        # e_levels = np.empty(grid_shape_2d)
+        # pv_levels = np.empty(grid_shape_2d)
+        #
+        # tallest_height = 0
+        # lowest_height = CHUNK.HEIGHT
 
         index = 0
         biome_talley: Dict[BiomeID, int] = {}
@@ -575,12 +575,6 @@ class TerrainGenerator:
                 #     new_limits = True
                 # if lowest_height < 0:
                 #     raise RuntimeError(f"Base Terrain Height ({base_height}) Too Low!")
-
-                continentalness_level = c_levels[z][x] = get_continentalness_level(continentalness)
-                temperature_level = t_levels[z][x] = get_temperature_level(temperature)
-                humidty_level = h_levels[z][x] = get_humidity_level(humidity)
-                erosion_level = e_levels[z][x] = get_erosion_level(erosion)
-                peak_valley_level = pv_levels[z][x] = get_peak_valley_level(peak_valley_value)
 
                 surface_biome = Biome(
                     BiomeParams(
@@ -636,6 +630,21 @@ class TerrainGenerator:
                         chunk.block_face_tex_size_ids[index] = block.face_tex_sizes
                         block.pos += glm.vec3(x, y, z)
                         block.initialize(chunk)
+
+                        if x > 0:
+                            block.neighbours[Side.West] = chunk.blocks[y][z][x - 1]
+                            chunk.blocks[y][z][x - 1].neighbours[Side.East] = block
+
+                        if y > 0:
+                            block.neighbours[Side.Bottom] = chunk.blocks[y - 1][z][x]
+                            chunk.blocks[y - 1][z][x].neighbours[Side.Top] = block
+
+                        if z > 0:
+                            block.neighbours[Side.North] = chunk.blocks[y][z - 1][x]
+                            chunk.blocks[y][z - 1][x].neighbours[Side.South] = block
+
+                        chunk.block_query_cache[glm.vec3(x, y, z)] = block
+
                         chunk.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
                         index += 1
                     else:

@@ -152,7 +152,7 @@ class MCPhys(PhysicalBox):
     def __post_init__(self):
         self._id = MCPhys.index  # uuid.uuid4()  # Generate a unique UUID for this instance
         MCPhys.index += 1
-        super().__init__(deepcopy(self.__aabb))  # Initialize the parent class
+        super().__init__(self.__aabb.copy())  # Initialize the parent class
 
     def __init_subclass__(cls, aabb: Union[glm.vec3, AABB], size: Optional[glm.vec3] = None):
         if isinstance(aabb, glm.vec3):
@@ -173,10 +173,6 @@ _face_model_mats: Dict[Side, glm.mat4] = {
     Side.Top: NMM(glm.vec3(0, 1.0, 0), glm.vec3(90, 0, 0)),
     Side.Bottom: NMM(glm.vec3(0, -1.0, 0), glm.vec3(-90, 0, 0)),
 }
-
-BLOCK_FACE_IDS = np.array([i for i in range(6)], dtype=np.int32)
-NULL_BLOCK_FACE_TEX_IDS = np.array([FaceTexID.Null for i in range(6)], dtype=np.int32)
-FULL_BLOCK_FACE_TEX_SIZE_IDS = np.array([FaceTexSizeID.Full for i in range(6)], dtype=np.int32)
 
 DO_FACE_HIDING = True
 
@@ -209,9 +205,11 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         self.initialized: bool = False
         self._awaiting_update: bool = False
 
-        self.face_ids: np.ndarray = deepcopy(BLOCK_FACE_IDS)
-        self.face_tex_ids: np.ndarray = deepcopy(NULL_BLOCK_FACE_TEX_IDS)
-        self.face_tex_sizes: np.ndarray = deepcopy(FULL_BLOCK_FACE_TEX_SIZE_IDS)
+        self.face_ids: np.ndarray = np.array([i for i in range(6)], dtype=np.int32)
+        self.face_tex_ids: np.ndarray = np.array([FaceTexID.Null for i in range(6)], dtype=np.int32)
+        self.face_tex_sizes: np.ndarray = np.array([FaceTexSizeID.Full for i in range(6)], dtype=np.int32)
+
+        self.neighbours: Dict[Side, Optional[Block]] = {side: None for side in _neighbour_offset.keys()}
 
     def initialize(self, chunk: Optional[Chunk] = None):
         if chunk:
@@ -219,6 +217,7 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
                 raise RuntimeError("Attempted to set chunk of a block already set in a chunk")
             self.chunk = chunk
         self.pos += self.chunk.pos + glm.vec3(0.5)
+        self.chunk.block_query_cache[self.pos] = self
         if DO_FACE_HIDING:
             if self.block_id == BlockID.Air or any(
                     index_part == 0 or index_part == CHUNK.WIDTH - 1 for index_part in self.index):
@@ -240,9 +239,12 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         self.chunk.stack_block(self)
 
     def neighbour(self, side: Union[int, Side]) -> Optional[Block]:
-        offset: glm.vec3 = _neighbour_offset[side]
-        neighbour_pos = self.pos + offset
-        return self.chunk.get_block(neighbour_pos)
+        neighbour = self.neighbours[side]
+        if neighbour is None:
+            offset: glm.vec3 = _neighbour_offset[side]
+            neighbour_pos = self.pos + offset
+            neighbour = self.neighbours[side] = self.chunk.get_block(neighbour_pos)
+        return neighbour
 
     def set(self, block_data: Union[int, BlockID, BlockData]):
         if isinstance(block_data, int):

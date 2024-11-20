@@ -111,6 +111,8 @@ class AABB(Collider):
         self._corner_cache = []
         self._corner_cache_valid = False
 
+    def copy(self) -> AABB:
+        return AABB.from_pos_size(self.pos.xyz, self.size.xyz)
 
     @property
     def _corners(self):
@@ -166,7 +168,19 @@ class AABB(Collider):
         return overlap.x >= 0 and overlap.y >= 0 and overlap.z >= 0
 
     # Example of the intersectPoint method with comments
-    def intersect_point(self, point: glm.vec3) -> Hit:
+    def intersect_point(self, point: Union[glm.vec2, glm.vec3], missing_axis: Optional[str] = None) -> Hit:
+        if isinstance(point, glm.vec2):
+            if missing_axis is None:
+                raise ValueError("If point is a 2D vector, missing_axis must be set")
+            elif missing_axis == "x":
+                point = glm.vec3(0, point.xy)
+            elif missing_axis == "y":
+                point = glm.vec3(point.x, 0, point.y)
+            elif missing_axis == "z":
+                point = glm.vec3(point.xy, 0)
+        elif isinstance(point, glm.vec3):
+            if missing_axis is not None:
+                raise ValueError("If point is a 3D vector, missing_axis must not be set")
         # Calculate the vector difference between the centers of the AABB and the point
         delta = point - self.pos
 

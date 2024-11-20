@@ -44,6 +44,7 @@ gen_options_superflat = nbtlib.Compound({
     "flat_world_options": nbtlib.String(""),  # The unescaped "generator-settings" string.
 })
 
+
 @dataclass
 class World(MCPhys, aabb=WORLD.AABB):
     player: Player = field(default_factory=Player)
@@ -60,6 +61,9 @@ class World(MCPhys, aabb=WORLD.AABB):
         self.regions = copy(WORLD.NONE_LIST)
 
         self._update_deque: deque[Region] = deque()
+
+        self.region_query_cache: Dict[glm.vec2, Region] = {}
+
         if self._from_file:
             for region_file in os.listdir(f"{self.file_path}\\region"):
                 wr_coords = glm.vec2(tuple(int(i) for i in region_file.split("r.")[1].split(".mcr")[0].split(".")))
@@ -104,7 +108,7 @@ class World(MCPhys, aabb=WORLD.AABB):
             wrid = self.spawn_region_index
         w_coords = wrid - WORLD.WIDTH // 2
 
-        region_pos = WORLD.WIDTH * glm.vec3(w_coords[0], 0,w_coords[1]) + glm.vec3(0,CHUNK.EXTENTS_HALF.y,0)
+        region_pos = WORLD.WIDTH * glm.vec3(w_coords[0], 0, w_coords[1]) + glm.vec3(0, CHUNK.EXTENTS_HALF.y, 0)
         self.set_region(wrid, Region(wrid))
         region = self.get_region(wrid)
         region.initialize(region_pos, self)
@@ -119,8 +123,32 @@ class World(MCPhys, aabb=WORLD.AABB):
         if not region._awaiting_update:
             self.enqueue_region(region)
 
-    def get_region(self, wrid: glm.ivec2) -> Optional[Region]:
-        return self.regions[wrid[0]][wrid[1]]
+    def get_region(self, region_pos: Union[glm.ivec2, glm.vec2]) -> Optional[Region]:
+        # if index vec2
+        if isinstance(region_pos, glm.ivec2):
+            return self.regions[region_pos[0]][region_pos[1]]
+
+        # Otherwise check cache
+        cached_region = self.region_query_cache.get(region_pos)
+        if cached_region is not None:  # get from cache
+            return cached_region
+
+        # If in bounds
+        if self.bounds.intersect_point(region_pos, "y"):
+            region = self.get_region(w_to_wr(region_pos))
+            if region is not None:
+                self.region_query_cache[region_pos] = region
+                return region
+
+    def get_chunk(self, chunk_pos: Union[glm.ivec2, glm.vec2]) -> Optional[Chunk]:
+        region = self.get_region(w_to_wr(chunk_pos))
+        if region is not None:
+            return region.get_chunk(chunk_pos)
+
+    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
+        chunk = self.get_chunk(block_pos.xz)
+        if chunk is not None:
+            return chunk.get_block(block_pos)
 
     def region_to_file(self, region: Region):
         World.save_region_to_file(region, self.file_path)
@@ -167,7 +195,7 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     @staticmethod
     def save_region_to_file(region: Region, world_file_path: str = os.getcwd() + "\\world"):
-        orel_wr_coords = region.index - WORLD.EXTENTS_HALF_INT#wrid_to_wr_coords(region.index) - WORLD_REGION_WIDTH_HALF
+        orel_wr_coords = region.index - WORLD.EXTENTS_HALF_INT  # wrid_to_wr_coords(region.index) - WORLD_REGION_WIDTH_HALF
         region_file_path = world_file_path + f"\\region\\r.{int(orel_wr_coords[0])}.{int(orel_wr_coords[1])}.mcr"
         with open(region_file_path, "wb") as f:
             f.write(region.serialize())
@@ -294,14 +322,13 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     def get_shape(self):
         return BlockShape(self._block_instances, self._face_instances)
-        #mesh = ShapeMesh(bs)
+        # mesh = ShapeMesh(bs)
 
 
 @dataclass
 class ChunkRange:
     size: int
     origin: glm.ivec2 = glm.ivec2()
-
 
 
 do_profile = True

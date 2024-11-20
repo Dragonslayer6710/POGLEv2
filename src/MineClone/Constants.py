@@ -14,6 +14,11 @@ class _Constants:
     HEIGHT: Optional[int] = None
 
     def __post_init__(self):
+        self.WIDTH_HALF: float = self.WIDTH / 2
+        self.WIDTH_HALF_INT: int = int(self.WIDTH_HALF)
+        if self.HEIGHT is not None:
+            self.HEIGHT_HALF: float = self.HEIGHT / 2
+            self.HEIGHT_HALF_INT: int = int(self.HEIGHT_HALF)
         self.WIDTH_RANGE: range = range(self.WIDTH)
         if self.HEIGHT is not None:
             self.HEIGHT_RANGE: range = range(self.HEIGHT)

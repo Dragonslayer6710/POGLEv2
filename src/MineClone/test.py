@@ -11,7 +11,8 @@ from POGLE.Shader import UniformBlockLayout
 if not glfw.init():
     raise Exception("GLFW can't be initialized")
 
-window = glfw.create_window(800, 600, "Face Test", None, None)
+WINDOW_TITLE = "Terrain Test"
+window = glfw.create_window(800, 600, WINDOW_TITLE, None, None)
 glfw.make_context_current(window)
 initFaceTextureAtlas()
 
@@ -52,6 +53,7 @@ def _main():
     global current_angle, current_y_angle
 
     world = World()#World.from_file()
+
     #chunk = Chunk()
     #r = _Region()
     #r.pos += glm.vec3(0, CHUNK.HEIGHT // 2, 0)
@@ -177,6 +179,8 @@ def _main():
     track_cursor = False
     camera.ProcessMouseMovement(0,0, True)
 
+    sprinting = False
+    sprint_mod = 1.25
     # glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
     while not glfw.window_should_close(window):
         # Clear the color buffer
@@ -223,7 +227,7 @@ def _main():
             glfw.KEY_LEFT_CONTROL,
             glfw.KEY_ESCAPE
         ]
-        speed = 0.01
+        speed = 0.05
         escape_pressed = False
         for key in keys:
             key_state = glfw.get_key(window, key)
@@ -243,6 +247,15 @@ def _main():
                         camera.Position -= camera.WorldUp * speed
                     case glfw.KEY_ESCAPE:
                         escape_pressed = True
+                    case glfw.KEY_LEFT_SHIFT:
+                        if not sprinting:
+                            sprinting = True
+                            speed *= sprint_mod
+            elif key_state == 0:
+                if key == glfw.KEY_LEFT_SHIFT:
+                    if sprinting:
+                        sprinting = False
+                        speed /= sprint_mod
         if escape_pressed:
             track_cursor = not track_cursor
             match glfw.get_input_mode(window, glfw.CURSOR):

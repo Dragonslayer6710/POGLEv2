@@ -4,7 +4,6 @@ from __future__ import annotations
 from io import BytesIO
 import zlib
 
-from Block import *
 from Entity import *
 from Biome import *
 from Generation import TerrainGenerator
@@ -137,6 +136,9 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK.NUM_BLOCKS,),
                                                                                         dtype=np.ndarray)
 
+        self.neighbours: Dict[glm.vec2, Chunk] = {}
+        self.block_query_cache: Dict[glm.vec3, Block] = {}
+
         if self.region:
             self.initialize()
 
@@ -148,6 +150,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
         offset_xz = REGION.CHUNK_OFFSETS[self.index[1]][self.index[0]]
         self.pos = self.region.pos.xyz + glm.vec3(offset_xz[0], 0, offset_xz[1])
+        self.region.chunk_query_cache[self.pos.xz] = self
         chunk_gen.gen_chunk(self)
         # for y, section in enumerate(self.blocks):
         #     y_index = y * CHUNK.SECTION_NUM_BLOCKS
@@ -222,17 +225,50 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         self._updated_deque.clear()
         self._awaiting_update = False
 
-    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
-        # if block_pos == glm.vec3(0.5,          0.5,        -15.5):
-        # print(block_pos)
+    def get_block(self, block_pos: Union[glm.ivec3, glm.vec3]) -> Optional[Block]:
+        # If index vec3
+        if isinstance(block_pos, glm.ivec3): # get from nested list
+            return self.blocks[block_pos.y][block_pos.z][block_pos.x]
+
+        # Otherwise check cache
+        cached_block = self.block_query_cache.get(block_pos)
+        if cached_block is not None: # get from cache
+            return cached_block
+
+        # Convert vec3 to index vec3
+        local_pos = w_to_cb(block_pos)
+
+        # If in bounds
         if self.bounds.intersect_point(block_pos):
-            local_pos = w_to_cb(block_pos)
-            block = self.blocks[local_pos.y][local_pos.z][local_pos.x]
-        else:
-            block = self.region.get_block(block_pos)
+            return self.get_block(local_pos) # Recurse and get from nested list
+
+        # Out of bounds so get from neighbour
+        # Get Chunk index of neighbour
+        neighbour_chunk_pos = w_to_rc(block_pos)
+        if self.index == neighbour_chunk_pos:
+            return None # Intersects on x and z but not y
+
+        # Get offset in terms of chunks
+        chunk_offset = neighbour_chunk_pos - self.index
+
+        neighbour = self.neighbours.get(chunk_offset)
+        if neighbour is None:
+            neighbour = self.region.get_chunk(neighbour_chunk_pos)
+            if neighbour is None:
+                return None
+            if neighbour.index == self.index:
+                raise Exception("Self cannot be neighbour")
+            self.neighbours[chunk_offset] = neighbour
+        block = neighbour.get_block(local_pos)
         if block is not None:
             if block_pos != block.pos:
+                print(self.pos)
+                print(self.index)
+                print(block_pos)
+                print(local_pos)
+                quit()
                 raise Exception("Wrong Block!")
+        self.block_query_cache[block_pos] = block
         return block
 
     def to_nbt(self) -> nbtlib.Compound:

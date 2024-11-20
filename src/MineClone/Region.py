@@ -6,6 +6,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable, BinaryIO
 
+import glm
 import nbtlib
 import numpy as np
 
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from World import World
 
 PROCESS_POOL_SIZE = max(1, os.cpu_count() - 1)
+
 
 @dataclass
 class Region(MCPhys, aabb=REGION.AABB):
@@ -35,6 +37,9 @@ class Region(MCPhys, aabb=REGION.AABB):
 
         self.initialized: bool = False
 
+        self.neighbours: Dict[glm.vec2, Region] = {}
+        self.chunk_query_cache: Dict[glm.vec2, Chunk] = {}
+
     def initialize(self, region_pos: glm.vec3, world: Optional[World] = None):
         if world:
             if self.world:
@@ -48,6 +53,7 @@ class Region(MCPhys, aabb=REGION.AABB):
                 for chunk in axis:
                     if chunk is not None:
                         chunk.initialize(self)
+                        self.chunk_query_cache[chunk.pos.xz] = chunk
 
         self.enqueue_update()
         self.initialized = True
@@ -85,32 +91,57 @@ class Region(MCPhys, aabb=REGION.AABB):
 
     def init_chunk(self, rcid: glm.ivec2):
         self._is_index_out_of_bounds(rcid)
-        self.chunks[rcid[1]][rcid[0]] = Chunk(rcid, region=self)
+        chunk = self.chunks[rcid[1]][rcid[0]] = Chunk(rcid, region=self)
         if not self._awaiting_update:
             self.enqueue_update()
 
-    def get_chunk(self, rcid: glm.ivec2) -> Optional[Chunk]:
-        return self.chunks[rcid[1]][rcid[0]]
+    def get_chunk(self, chunk_pos: Union[glm.ivec2, glm.vec2]) -> Optional[Chunk]:
+        # If index vec2
+        if isinstance(chunk_pos, glm.ivec2):
+            return self.chunks[chunk_pos[1]][chunk_pos[0]]
+
+        # Otherwise check cache
+        cached_chunk = self.chunk_query_cache.get(chunk_pos)
+        if cached_chunk is not None:  # get from cache
+            return cached_chunk
+
+        # Convert vec2 to index vec2
+        local_pos = w_to_rc(chunk_pos)
+
+        # If in bounds
+        if self.bounds.intersect_point(chunk_pos, "y"):
+            return self.get_chunk(local_pos)
+
+        # Out of bounds so get from neighbour
+        # Get Region index of neighbour
+        neighbour_region_pos = w_to_wr(chunk_pos)
+
+        # Get offset in terms of regions
+        region_offset = neighbour_region_pos - self.index
+
+        neighbour = self.neighbours.get(region_offset)
+        if neighbour is None:
+            neighbour = self.world.get_region(neighbour_region_pos)
+            if neighbour is None:
+                return None
+            if neighbour.index == self.index:
+                raise Exception("Self cannot be neighbour")
+            self.neighbours[region_offset] = neighbour
+        chunk = neighbour.get_chunk(chunk_pos)
+        if chunk is not None:
+            if chunk_pos != chunk.pos:
+                raise Exception("Wrong Chunk!")
+            self.chunk_query_cache[chunk_pos] = chunk
+        return chunk
+
+    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
+        chunk = self.get_chunk(block_pos.xz)
+        if chunk is not None:
+            return chunk.get_block(block_pos)
 
     @property
     def non_none_chunks(self) -> Tuple[Chunk]:
         return tuple(filter(lambda x: x is not None, self.chunks))
-
-    def get_block(self, block_pos: glm.vec3) -> Optional[Block]:
-        #if block_pos == glm.vec3(0.5, 0.5, -15.5):
-        #print(block_pos)
-        if self.bounds.intersect_point(block_pos):
-            local_pos = w_to_rc(block_pos)
-            chunk = self.get_chunk(local_pos)
-            if chunk is None:
-                return None
-            block = chunk.get_block(block_pos)
-        else:
-            block = self.world.get_block(block_pos)
-        if block is not None:
-            if block_pos != block.pos:
-                raise Exception("Wrong Block!")
-        return block
 
     def serialize(self) -> bytes:
         # create byte arrays to store chunk locations, timestamps and payloads
@@ -234,6 +265,8 @@ class Region(MCPhys, aabb=REGION.AABB):
                 VertexAttribute("a_FaceTexSizeID", np.concatenate(block_face_tex_size_ids), divisor=1),
             ]
         )
+
+
 if __name__ == "__main__":
     def test():
         from World import World
