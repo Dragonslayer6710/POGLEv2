@@ -145,6 +145,7 @@ _FACE_MASKS = tuple(1 << i for i in range(6))
 
 import uuid
 
+
 @dataclass
 class MCPhys(PhysicalBox):
     index: Union[int, glm.ivec2, glm.ivec3] = 0
@@ -176,6 +177,7 @@ _face_model_mats: Dict[Side, glm.mat4] = {
 
 DO_FACE_HIDING = True
 
+
 @dataclass
 class Block(MCPhys, aabb=BLOCK_BASE_AABB):
     data: Union[int, BlockData] = AIR_BLOCK_DATA
@@ -205,11 +207,36 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         self.initialized: bool = False
         self._awaiting_update: bool = False
 
-        self.face_ids: np.ndarray = np.array([i for i in range(6)], dtype=np.int32)
-        self.face_tex_ids: np.ndarray = np.array([FaceTexID.Null for i in range(6)], dtype=np.int32)
-        self.face_tex_sizes: np.ndarray = np.array([FaceTexSizeID.Full for i in range(6)], dtype=np.int32)
+        self.face_ids: np.ndarray = np.array(
+            [
+                0, 1, 2,
+                3, 4, 5
+            ],
+            dtype=np.int32
+        )
+        self.face_tex_ids: np.ndarray = np.array(
+            [
+                FaceTexID.Null, FaceTexID.Null, FaceTexID.Null,
+                FaceTexID.Null, FaceTexID.Null, FaceTexID.Null
+            ],
+            dtype=np.int32
+        )
+        self.face_tex_sizes: np.ndarray = np.array(
+            [
+                FaceTexSizeID.Full, FaceTexSizeID.Full, FaceTexSizeID.Full,
+                FaceTexSizeID.Full, FaceTexSizeID.Full, FaceTexSizeID.Full
+            ],
+            dtype=np.int32
+        )
 
-        self.neighbours: Dict[Side, Optional[Block]] = {side: None for side in _neighbour_offset.keys()}
+        self.neighbours: Dict[Side, Optional[Block]] = {
+            Side.East: None,
+            Side.South: None,
+            Side.West: None,
+            Side.North: None,
+            Side.Top: None,
+            Side.Bottom: None,
+        }
 
     def initialize(self, chunk: Optional[Chunk] = None):
         if chunk:
@@ -295,7 +322,6 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             elif not is_air:
                 self.reveal_face(face)
         self._awaiting_update = False
-
 
     def _is_face_visible(self, face: int):
         return self._visible_bitmask & _FACE_MASKS[face]

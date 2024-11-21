@@ -194,4 +194,4 @@ def w_to_cb(w: Union[glm.ivec3, glm.vec3]) -> glm.ivec3:
 
 CHUNK = _CHUNK(16, 128, 0)
 REGION = _REGION(32)
-WORLD = _WORLD(15, 19, 9)
+WORLD = _WORLD(15, 19, 1)

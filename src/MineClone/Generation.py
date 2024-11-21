@@ -514,13 +514,14 @@ class TerrainGenerator:
         self.d_ngen = DenseNoiseGen(self.seed + 5)
 
         self.chunk_size = CHUNK.EXTENTS.yzx
+        self.chunk_size_zx = CHUNK.EXTENTS.zx
 
     def gen_chunk(self, chunk: Optional[Chunk] = None, chunk_pos: Optional[glm.vec3] = None) -> Optional[np.ndarray]:
         if chunk is not None:
             chunk_pos = chunk.pos
         elif chunk_pos is None:
             raise ValueError("Either 'chunk' or 'chunk_pos' must be provided.")
-        grid_coords_2d, grid_shape_2d = get_grid_coords(chunk_pos.zx, self.chunk_size.yz)
+        grid_coords_2d, grid_shape_2d = get_grid_coords(chunk_pos.zx, self.chunk_size_zx)
         grid_coords_3d, grid_shape_3d = get_grid_coords(chunk_pos.yzx, self.chunk_size)
         # print(f"z: {grid_coords_2d[0][0]}, x:{grid_coords_2d[1][0]}")
         # print(f"z: {grid_coords_2d[0][-1]}, x:{grid_coords_2d[1][-1]}")
@@ -617,6 +618,8 @@ class TerrainGenerator:
                     )
                     if chunk is not None:
                         chunk.biomes[y][z][x] = biome
+                        chunk.blocks[y][z][x] = Block(glm.ivec3(y, z, x))
+                        block = chunk.blocks[y][z][x]
 
                         if density > 0:  # Solid Block
                             if surface_height is None:
@@ -624,7 +627,6 @@ class TerrainGenerator:
                             block_id = get_biome_block_id(biome, y, surface_height)
                             chunk.set_block(x, y, z, block_id)
 
-                        block = chunk.blocks[y][z][x]
                         chunk.block_face_ids[index] = block.face_ids
                         chunk.block_face_tex_ids[index] = block.face_tex_ids
                         chunk.block_face_tex_size_ids[index] = block.face_tex_sizes
@@ -635,9 +637,9 @@ class TerrainGenerator:
                             block.neighbours[Side.West] = chunk.blocks[y][z][x - 1]
                             chunk.blocks[y][z][x - 1].neighbours[Side.East] = block
 
-                        if y > 0:
-                            block.neighbours[Side.Bottom] = chunk.blocks[y - 1][z][x]
-                            chunk.blocks[y - 1][z][x].neighbours[Side.Top] = block
+                        if y < CHUNK.HEIGHT - 1:
+                            block.neighbours[Side.Top] = chunk.blocks[y + 1][z][x]
+                            chunk.blocks[y + 1][z][x].neighbours[Side.Bottom] = block
 
                         if z > 0:
                             block.neighbours[Side.North] = chunk.blocks[y][z - 1][x]
@@ -645,7 +647,7 @@ class TerrainGenerator:
 
                         chunk.block_query_cache[glm.vec3(x, y, z)] = block
 
-                        chunk.block_instances[index] = np.array(NMM(block.pos, s=glm.vec3(0.5)).to_list())
+                        chunk.block_instances[index] = NMM(block.pos, s=glm.vec3(0.5), glr=True)
                         index += 1
                     else:
                         biome_values[y][z][x] = biome.id

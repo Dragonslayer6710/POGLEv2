@@ -1,6 +1,7 @@
 import random
 
 import glfw
+import glm
 import numpy as np
 
 from Face import initFaceTextureAtlas
@@ -48,12 +49,51 @@ current_angle = 0.0  # Current rotation angle in degrees
 y_rotation_speed = 15.0  # Degrees per second for y-axis motion
 current_y_angle = 0.0  # Current rotation angle for y-axis motion
 
-
 def _main():
     global current_angle, current_y_angle
 
     world = World()#World.from_file()
 
+    regions = []
+    chunks = []
+    blocks = []
+
+    for region_axis in world.regions:
+        for region in filter(lambda x: x is not None, region_axis):
+            regions.append(region)
+            for chunk_axis in region.chunks:
+                for chunk in filter(lambda x: x is not None, chunk_axis):
+                    chunks.append(chunk)
+                    for section in chunk.blocks:
+                        for block_axis in section:
+                            for block in filter(lambda x: x is not None, block_axis):
+                                blocks.append(block)
+
+    region_mats = VertexAttribute("a_Model", [
+        NMM(region.pos, s=(region.size / 2)*1.0001, glr=True)
+        for region in regions
+    ], divisor=1)
+
+    chunk_mats = VertexAttribute("a_Model", [
+        NMM(chunk.pos, s=(chunk.size/2)*1.001, glr=True)
+        for chunk in chunks
+    ], divisor=1)
+
+    block_mats = VertexAttribute("a_Model", [
+        NMM(block.pos, s=(block.size / 2)*1.0001, glr=True)
+        for block in blocks
+    ], divisor=1)
+
+    cube_data_layout = DataLayout([
+        VertexAttribute("a_Position", Cube._positions),
+        VertexAttribute("a_Alpha", [0.15 for _ in range(8)]),
+        block_mats,
+    ])
+
+    cube_vao = VertexArray()
+    cube_vao.set_ebo(data=np.array(Cube._indices, dtype=np.ushort))
+    cube_vao.add_vbo(cube_data_layout)
+    cube_shader = ShaderProgram("cube", "cube")
     #chunk = Chunk()
     #r = _Region()
     #r.pos += glm.vec3(0, CHUNK.HEIGHT // 2, 0)
@@ -62,7 +102,7 @@ def _main():
 
     # r.update()
 
-    bfs = world.spawn_region.get_shape()
+    blocks_data_layout = world.spawn_region.get_shape()
 
     shader = ShaderProgram("block", "block")
 
@@ -71,7 +111,7 @@ def _main():
     camera = Camera(zFar=1000)
     vao = VertexArray()
     vao.set_ebo(data=np.array(Quad._indices, dtype=np.ushort))
-    vao.add_vbo(bfs)
+    vao.add_vbo(blocks_data_layout)
 
     shader.use()
     _faceTextureAtlas.bind()
@@ -82,7 +122,7 @@ def _main():
 
     # mesh = ShapeMesh(
     #    # mats,  # chunk.block_instances[:-1],
-    #    bfs,
+    #    blocks_data_layout,
     #    shader, {"tex0": _faceTextureAtlas}
     # )
     # quit()
@@ -90,6 +130,7 @@ def _main():
 
     projection = camera.get_projection()  # glm.perspective(glm.radians(45.0), 800 / 600, 0.1, 100.0)
     camera.Position = glm.vec3(8, 60, 9)
+
     camera.Pitch = -15
     view = camera.GetViewMatrix()
     ubo_mats = UniformBuffer()
@@ -173,6 +214,10 @@ def _main():
     shader.bind_uniform_block("ub_FaceTexPositions")
     shader.bind_uniform_block("ub_FaceTexSizes")
 
+
+    cube_shader.use()
+    cube_shader.bind_uniform_block("ub_Matrices")
+
     # Main loop
     previous_time = glfw.get_time()
     old_x, old_y = 0, 0
@@ -181,6 +226,9 @@ def _main():
 
     sprinting = False
     sprint_mod = 1.25
+
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     # glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
     while not glfw.window_should_close(window):
         # Clear the color buffer
@@ -280,9 +328,13 @@ def _main():
 
         shader.use()
         vao.bind()
-        glDrawElementsInstanced(GL_TRIANGLES, len(Quad._indices), GL_UNSIGNED_SHORT, None, bfs.attributes[-1].size)
+        glDrawElementsInstanced(GL_TRIANGLES, len(Quad._indices), GL_UNSIGNED_SHORT, None, blocks_data_layout.attributes[-1].size)
         vao.unbind()
-        # mesh.draw()
+
+        cube_shader.use()
+        cube_vao.bind()
+        glDrawElementsInstanced(GL_TRIANGLES, len(Cube._indices), GL_UNSIGNED_SHORT, None, cube_data_layout.attributes[-1].size)
+        cube_vao.unbind()
 
         # Swap front and back buffers
         glfw.swap_buffers(window)

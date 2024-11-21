@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from typing import List, Collection, Union, Any, Tuple, Dict, Optional
 
 
-def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1)) -> glm.mat4:
-    return NewModelMatrix(t, r, s)
+def NMM(t: glm.vec3, r: glm.vec3 = glm.vec3(), s: glm.vec3 = glm.vec3(1), glr: bool = False) -> Union[glm.mat4, np.ndarray]:
+    return NewModelMatrix(t, r, s, glr)
 
 
 def NewModelMatrix(translation: glm.vec3 = glm.vec3(),
                    rotation: glm.vec3 = glm.vec3(),
-                   scale: glm.vec3 = glm.vec3(1.0)) -> glm.mat4:
+                   scale: glm.vec3 = glm.vec3(1.0),
+                   gl_ready = False) -> Union[glm.mat4, np.ndarray]:
     # Create the rotation matrix using Euler angles
     rotation_matrix = glm.mat4_cast(glm.quat(glm.vec3(glm.radians(rotation))))
 
@@ -24,7 +25,8 @@ def NewModelMatrix(translation: glm.vec3 = glm.vec3(),
 
     # Combine the matrices: translation * (rotation * scale)
     model_matrix = translation_matrix * rotation_matrix * scale_matrix
-
+    if gl_ready:
+        return np.array(model_matrix.to_list())
     return model_matrix
 
 

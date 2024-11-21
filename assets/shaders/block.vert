@@ -44,13 +44,6 @@ void main(){
     // gl_Position = vec4(a_Position, 1.0);
     mat4 face_transform;
     face_transform = a_Model * u_FaceTransforms[a_FaceID];
-    /**face_transform = mat4(
-        5.96046e-08, 0, -1, 0,
-        0,  1,  0, 0,
-        1,  0, 5.96046e-08, 0,
-        -1, 0,  0, 1
-    );
-    face_transform = a_Model;*/
 
     vec2 tex_size;
     tex_size = u_TexSizes[a_FaceTexSizeID];

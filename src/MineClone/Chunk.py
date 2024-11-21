@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-
 from io import BytesIO
 import zlib
+
+import numpy as np
 
 from Entity import *
 from Biome import *
@@ -13,7 +14,6 @@ from collections import deque
 
 if TYPE_CHECKING:
     from Region import Region
-
 
 
 def block_state_compound(blocks: List[Block]) -> nbtlib.Compound:
@@ -78,29 +78,18 @@ def _decompress_chunk_data(compressed_data, compression_type):
 NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
 
 
-chunk_gen = TerrainGenerator()
+chunk_gen = TerrainGenerator(42)
+
 @dataclass
 class Chunk(MCPhys, aabb=CHUNK.AABB):
-    blocks: Tuple[Tuple[Tuple[Block, ...], ...], ...] = field(
-        default_factory=lambda: tuple(
-            tuple(
-                tuple(
-                    Block(glm.ivec3(y, z, x)) for x in CHUNK.WIDTH_RANGE
-                ) for z in CHUNK.WIDTH_RANGE
-            ) for y in CHUNK.HEIGHT_RANGE
-        )
+    blocks: np.ndarray = field(
+        default_factory=lambda: np.empty((CHUNK.HEIGHT, CHUNK.WIDTH, CHUNK.WIDTH), dtype=object)
     )
     entities: List[Entity] = field(default_factory=list)
     tile_entities: List[TileEntity] = field(default_factory=list)
     height_map: List[List[int]] = field(default_factory=lambda: copy(CHUNK.NULL_HEIGHT_MAP))
     biomes: List[List[List[Optional[Biome], ...], ...]] = field(
-        default_factory=lambda: [
-            [
-                [
-                    None for x in CHUNK.WIDTH_RANGE
-                ] for z in CHUNK.WIDTH_RANGE
-            ] for y in CHUNK.HEIGHT_RANGE
-        ]
+        default_factory=lambda: np.empty((CHUNK.HEIGHT, CHUNK.WIDTH, CHUNK.WIDTH), dtype=object)
     )
 
     _from_nbt: bool = False
@@ -227,12 +216,12 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
     def get_block(self, block_pos: Union[glm.ivec3, glm.vec3]) -> Optional[Block]:
         # If index vec3
-        if isinstance(block_pos, glm.ivec3): # get from nested list
+        if isinstance(block_pos, glm.ivec3):  # get from nested list
             return self.blocks[block_pos.y][block_pos.z][block_pos.x]
 
         # Otherwise check cache
         cached_block = self.block_query_cache.get(block_pos)
-        if cached_block is not None: # get from cache
+        if cached_block is not None:  # get from cache
             return cached_block
 
         # Convert vec3 to index vec3
@@ -240,13 +229,13 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
         # If in bounds
         if self.bounds.intersect_point(block_pos):
-            return self.get_block(local_pos) # Recurse and get from nested list
+            return self.get_block(local_pos)  # Recurse and get from nested list
 
         # Out of bounds so get from neighbour
         # Get Chunk index of neighbour
         neighbour_chunk_pos = w_to_rc(block_pos)
         if self.index == neighbour_chunk_pos:
-            return None # Intersects on x and z but not y
+            return None  # Intersects on x and z but not y
 
         # Get offset in terms of chunks
         chunk_offset = neighbour_chunk_pos - self.index
