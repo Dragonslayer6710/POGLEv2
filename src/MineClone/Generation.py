@@ -626,10 +626,8 @@ class TerrainGenerator:
                                 surface_height = y
                             block_id = get_biome_block_id(biome, y, surface_height)
                             chunk.set_block(x, y, z, block_id)
-
-                        chunk.block_face_ids[index] = block.face_ids
-                        chunk.block_face_tex_ids[index] = block.face_tex_ids
-                        chunk.block_face_tex_size_ids[index] = block.face_tex_sizes
+                        face_index = index * 6
+                        chunk.block_face_instance_data[face_index: face_index+6] = block.face_instance_data
                         block.pos += glm.vec3(x, y, z)
                         block.initialize(chunk)
 
@@ -647,7 +645,7 @@ class TerrainGenerator:
 
                         chunk.block_query_cache[glm.vec3(x, y, z)] = block
 
-                        chunk.block_instances[index] = NMM(block.pos, s=glm.vec3(0.5), glr=True)
+                        chunk.block_instance_data[index] = block.instance_data
                         index += 1
                     else:
                         biome_values[y][z][x] = biome.id

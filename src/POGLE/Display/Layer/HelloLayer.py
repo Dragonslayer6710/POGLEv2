@@ -10,7 +10,6 @@ class HelloLayer(Layer):
 
     def OnAttach(self):
         global game
-        InitControls()
         game = Game()
 
         self.initUpdate = True

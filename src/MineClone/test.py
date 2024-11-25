@@ -17,8 +17,9 @@ window = glfw.create_window(800, 600, WINDOW_TITLE, None, None)
 glfw.make_context_current(window)
 initFaceTextureAtlas()
 
-from World import *
-from Block import _face_model_mats, _faceTextureAtlas
+# from World import *
+#from Block import _face_model_mats, face_texture_atlas
+from Game import *
 import math
 
 # dl = DataLayout(
@@ -49,175 +50,174 @@ current_angle = 0.0  # Current rotation angle in degrees
 y_rotation_speed = 15.0  # Degrees per second for y-axis motion
 current_y_angle = 0.0  # Current rotation angle for y-axis motion
 
+draw_hitboxes = False
+test_game = False
 def _main():
     global current_angle, current_y_angle
+    if not test_game:
+        world = World()#World.from_file()
 
-    world = World()#World.from_file()
+        regions = []
+        chunks = []
+        blocks = []
 
-    regions = []
-    chunks = []
-    blocks = []
 
-    for region_axis in world.regions:
-        for region in filter(lambda x: x is not None, region_axis):
-            regions.append(region)
-            for chunk_axis in region.chunks:
-                for chunk in filter(lambda x: x is not None, chunk_axis):
-                    chunks.append(chunk)
-                    for section in chunk.blocks:
-                        for block_axis in section:
-                            for block in filter(lambda x: x is not None, block_axis):
-                                blocks.append(block)
+        for region_axis in world.regions:
+            for region in filter(lambda x: x is not None, region_axis):
+                regions.append(region)
+                for chunk_axis in region.chunks:
+                    for chunk in filter(lambda x: x is not None, chunk_axis):
+                        chunks.append(chunk)
+                        for section in chunk.blocks:
+                            for block_axis in section:
+                                for block in filter(lambda x: x is not None, block_axis):
+                                    blocks.append(block)
 
-    region_mats = VertexAttribute("a_Model", [
-        NMM(region.pos, s=(region.size / 2)*1.0001, glr=True)
-        for region in regions
-    ], divisor=1)
+        region_mats = VertexAttribute("a_Model", [
+            NMM(region.pos, s=(region.size / 2)*1.0001, glr=True)
+            for region in regions
+        ], divisor=1)
 
-    chunk_mats = VertexAttribute("a_Model", [
-        NMM(chunk.pos, s=(chunk.size/2)*1.001, glr=True)
-        for chunk in chunks
-    ], divisor=1)
+        chunk_mats = VertexAttribute("a_Model", [
+            NMM(chunk.pos, s=(chunk.size/2)*1.001, glr=True)
+            for chunk in chunks
+        ], divisor=1)
 
-    block_mats = VertexAttribute("a_Model", [
-        NMM(block.pos, s=(block.size / 2)*1.0001, glr=True)
-        for block in blocks
-    ], divisor=1)
+        block_mats = VertexAttribute("a_Model", [
+            NMM(block.pos, s=(block.size / 2)*1.0001, glr=True)
+            for block in blocks
+        ], divisor=1)
 
-    cube_data_layout = DataLayout([
-        VertexAttribute("a_Position", Cube._positions),
-        VertexAttribute("a_Alpha", [0.15 for _ in range(8)]),
-        block_mats,
-    ])
+        cube_data_layout = DataLayout([
+            VertexAttribute("a_Position", Cube._positions),
+            VertexAttribute("a_Alpha", [0.15 for _ in range(8)]),
+            block_mats,
+        ])
 
-    cube_vao = VertexArray()
-    cube_vao.set_ebo(data=np.array(Cube._indices, dtype=np.ushort))
-    cube_vao.add_vbo(cube_data_layout)
-    cube_shader = ShaderProgram("cube", "cube")
-    #chunk = Chunk()
-    #r = _Region()
-    #r.pos += glm.vec3(0, CHUNK.HEIGHT // 2, 0)
-    #chunk.initialize(r)
-    #chunk.update()
+        cube_vao = VertexArray()
+        cube_vao.set_ebo(data=np.array(Cube._indices, dtype=np.ushort))
+        cube_vao.add_vbo(cube_data_layout)
+        cube_shader = ShaderProgram("cube", "cube")
+        #chunk = Chunk()
+        #r = _Region()
+        #r.pos += glm.vec3(0, CHUNK.HEIGHT // 2, 0)
+        #chunk.initialize(r)
+        #chunk.update()
 
-    # r.update()
+        # r.update()
 
-    blocks_data_layout = world.spawn_region.get_shape()
+        # Define the perspective projection and view matrix
+        from POGLE.Renderer.Camera import Camera
+        camera = Camera(zFar=1000)
+        # mats = [glm.mat4()] * 65536
+        # mats = chunk.block_instances
 
-    shader = ShaderProgram("block", "block")
+        # mesh = ShapeMesh(
+        #    # mats,  # chunk.block_instances[:-1],
+        #    blocks_data_layout,
+        #    shader, {"tex0": _faceTextureAtlas}
+        # )
+        # quit()
+        glEnable(GL_DEPTH_TEST)
 
-    # Define the perspective projection and view matrix
-    from POGLE.Renderer.Camera import Camera
-    camera = Camera(zFar=1000)
-    vao = VertexArray()
-    vao.set_ebo(data=np.array(Quad._indices, dtype=np.ushort))
-    vao.add_vbo(blocks_data_layout)
+        projection = camera.get_projection()  # glm.perspective(glm.radians(45.0), 800 / 600, 0.1, 100.0)
+        camera.Position = glm.vec3(8, 60, 9)
 
-    shader.use()
-    _faceTextureAtlas.bind()
-    texture_unit = _faceTextureAtlas.get_texture_slot()
-    shader.setTexture("tex0", texture_unit)
-    # mats = [glm.mat4()] * 65536
-    # mats = chunk.block_instances
-
-    # mesh = ShapeMesh(
-    #    # mats,  # chunk.block_instances[:-1],
-    #    blocks_data_layout,
-    #    shader, {"tex0": _faceTextureAtlas}
-    # )
-    # quit()
-    glEnable(GL_DEPTH_TEST)
-
-    projection = camera.get_projection()  # glm.perspective(glm.radians(45.0), 800 / 600, 0.1, 100.0)
-    camera.Position = glm.vec3(8, 60, 9)
-
-    camera.Pitch = -15
-    view = camera.GetViewMatrix()
-    ubo_mats = UniformBuffer()
-    ub_mats = UniformBlock.create(UniformBlockLayout(
-        "ub_Matrices",
-        [
-            VertexAttribute("u_Projection", projection),
-            VertexAttribute("u_View", view)
-        ]
-    ))
-    ubo_mats.bind_block(ub_mats.binding)
-    ubo_mats.bind()
-    ubo_mats.buffer_data(
-        ub_mats.data
-    )
-    ubo_mats.unbind()
-
-    ubo_face_transforms = UniformBuffer()
-    ub_face_transforms = UniformBlock.create(
-        UniformBlockLayout(
-            "ub_FaceTransforms",
+        camera.Pitch = -15
+        view = camera.GetViewMatrix()
+        ubo_mats = UniformBuffer()
+        ub_mats = UniformBlock.create(UniformBlockLayout(
+            "ub_Matrices",
             [
-                VertexAttribute("u_FaceTransform", [np.array(mat.to_list()) for mat in _face_model_mats.values()])
+                VertexAttribute("u_Projection", projection),
+                VertexAttribute("u_View", view)
+            ]
+        ))
+        ubo_mats.bind_block(ub_mats.binding)
+        ubo_mats.bind()
+        ubo_mats.buffer_data(
+            ub_mats.data
+        )
+        ubo_mats.unbind()
+
+        ubo_face_transforms = UniformBuffer()
+        ub_face_transforms = UniformBlock.create(
+            UniformBlockLayout(
+                "ub_FaceTransforms",
+                [
+                    VertexAttribute("u_FaceTransform", [np.array(mat.to_list()) for mat in face_model_mats.values()])
+                ]
+            )
+        )
+        ubo_face_transforms.bind_block(ub_face_transforms.binding)
+        ubo_face_transforms.bind()
+        ubo_face_transforms.buffer_data(
+            ub_face_transforms.data
+        )
+        ubo_face_transforms.unbind()
+
+        ubo_face_tex_positions = UniformBuffer()
+        ub_face_tex_positions = UniformBlock.create(
+            UniformBlockLayout(
+                "ub_FaceTexPositions",
+                [
+                    VertexAttribute(
+                        "u_TexPositions",
+                        [
+                            face_texture_atlas.get_sub_texture(i).pos
+                            for i in range(4)
+                        ]
+                    )
+                ]
+            )
+        )
+        ubo_face_tex_positions.bind_block(ub_face_tex_positions.binding)
+        ubo_face_tex_positions.bind()
+        ubo_face_tex_positions.buffer_data(
+            ub_face_tex_positions.data
+        )
+        ubo_face_tex_positions.unbind()
+
+        ubo_face_tex_sizes = UniformBuffer()
+        ub_face_tex_sizes = UniformBlock.create(
+            UniformBlockLayout(
+                "ub_FaceTexSizes",
+                [
+                    VertexAttribute(
+                        "u_TexSizes",
+                        [face_texture_atlas.get_sub_texture(0).size]
+                    )
+                ]
+            )
+        )
+        ubo_face_tex_sizes.bind_block(ub_face_tex_sizes.binding)
+        ubo_face_tex_sizes.bind()
+        ubo_face_tex_sizes.buffer_data(
+            ub_face_tex_sizes.data
+        )
+
+        ubo_face_tex_sizes.unbind()
+
+        ubo_face_tex_positions.print_data()
+        ubo_face_tex_sizes.print_data()
+
+        mesh = world.spawn_region.get_mesh()
+        mesh.add_texture("tex0", face_texture_atlas)
+
+        mesh.bind_uniform_blocks(
+            [
+                "ub_Matrices",
+                "ub_FaceTransforms",
+                "ub_FaceTexPositions",
+                "ub_FaceTexSizes"
             ]
         )
-    )
-    ubo_face_transforms.bind_block(ub_face_transforms.binding)
-    ubo_face_transforms.bind()
-    ubo_face_transforms.buffer_data(
-        ub_face_transforms.data
-    )
-    ubo_face_transforms.unbind()
 
-    ubo_face_tex_positions = UniformBuffer()
-    ub_face_tex_positions = UniformBlock.create(
-        UniformBlockLayout(
-            "ub_FaceTexPositions",
-            [
-                VertexAttribute(
-                    "u_TexPositions",
-                    [
-                        _faceTextureAtlas.get_sub_texture(i).pos
-                        for i in range(4)
-                    ]
-                )
-            ]
-        )
-    )
-    ubo_face_tex_positions.bind_block(ub_face_tex_positions.binding)
-    ubo_face_tex_positions.bind()
-    ubo_face_tex_positions.buffer_data(
-        ub_face_tex_positions.data
-    )
-    ubo_face_tex_positions.unbind()
-
-    ubo_face_tex_sizes = UniformBuffer()
-    ub_face_tex_sizes = UniformBlock.create(
-        UniformBlockLayout(
-            "ub_FaceTexSizes",
-            [
-                VertexAttribute(
-                    "u_TexSizes",
-                    [_faceTextureAtlas.get_sub_texture(0).size]
-                )
-            ]
-        )
-    )
-    ubo_face_tex_sizes.bind_block(ub_face_tex_sizes.binding)
-    ubo_face_tex_sizes.bind()
-    ubo_face_tex_sizes.buffer_data(
-        ub_face_tex_sizes.data
-    )
-
-    ubo_face_tex_sizes.unbind()
-
-    ubo_face_tex_positions.print_data()
-    ubo_face_tex_sizes.print_data()
-
-    shader.bind_uniform_block("ub_Matrices")
-    shader.bind_uniform_block("ub_FaceTransforms")
-    shader.bind_uniform_block("ub_FaceTexPositions")
-    shader.bind_uniform_block("ub_FaceTexSizes")
-
-
-    cube_shader.use()
-    cube_shader.bind_uniform_block("ub_Matrices")
-
+        cube_shader.use()
+        cube_shader.bind_uniform_block("ub_Matrices")
+    else:
+        game = Game()
+        camera = game.playerCam
     # Main loop
     previous_time = glfw.get_time()
     old_x, old_y = 0, 0
@@ -227,8 +227,14 @@ def _main():
     sprinting = False
     sprint_mod = 1.25
 
+    if not test_game:
+        mesh.shader.use()
+        mesh.bind_textures()
+
+
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
     # glfw.set_input_mode(window, glfw.CURSOR, glfw.CURSOR_DISABLED)
     while not glfw.window_should_close(window):
         # Clear the color buffer
@@ -316,25 +322,31 @@ def _main():
         if track_cursor:
             camera.ProcessMouseMovement(delta_x, -delta_y, True)
 
+        projection = camera.get_projection()
         view = camera.GetViewMatrix()
+        if not test_game:
+            # Update UBO with new projection and view matrices
+            ubo_mats.bind()
+            ub_mats.set_data([projection, view])  # Assuming you have modified setData to handle updates
+            ubo_mats.buffer_data(ub_mats.data)
+            ubo_mats.unbind()
 
-        # Update UBO with new projection and view matrices
-        ubo_mats.bind()
-        ub_mats.set_data([projection, view])  # Assuming you have modified setData to handle updates
-        ubo_mats.buffer_data(ub_mats.data)
-        ubo_mats.unbind()
 
-        shader.bind_uniform_block("ub_Matrices")
+        # shader.use()
+        # vao.bind()
+        # glDrawElementsInstanced(GL_TRIANGLES, len(Quad._indices), GL_UNSIGNED_SHORT, None, block_shape.data_layout.attributes[-1].size)
+        # vao.unbind()
 
-        shader.use()
-        vao.bind()
-        glDrawElementsInstanced(GL_TRIANGLES, len(Quad._indices), GL_UNSIGNED_SHORT, None, blocks_data_layout.attributes[-1].size)
-        vao.unbind()
+            mesh.draw()
 
-        cube_shader.use()
-        cube_vao.bind()
-        glDrawElementsInstanced(GL_TRIANGLES, len(Cube._indices), GL_UNSIGNED_SHORT, None, cube_data_layout.attributes[-1].size)
-        cube_vao.unbind()
+            if draw_hitboxes:
+                cube_shader.use()
+                cube_vao.bind()
+                glDrawElementsInstanced(GL_TRIANGLES, len(Cube._indices), GL_UNSIGNED_SHORT, None, cube_data_layout.attributes[-1].size)
+                cube_vao.unbind()
+        else:
+            game.update(delta_time, projection, view)
+            game.draw()
 
         # Swap front and back buffers
         glfw.swap_buffers(window)

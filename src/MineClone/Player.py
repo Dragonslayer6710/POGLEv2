@@ -10,7 +10,6 @@ from POGLE.Renderer.Camera import *
 from POGLE.Core.Application import GetApplication
 
 from POGLE.Geometry.Data import NMM
-from POGLE.Renderer.Mesh import CubeMesh
 
 _PLAYER_DIMENSIONS: glm.vec3 = glm.vec3(0.8, 1.8, 0.8)
 _PLAYER_HALF_DIMENSIONS = _PLAYER_DIMENSIONS / 2
@@ -44,7 +43,11 @@ class Player(PhysicalBox):
 
         self.bounds = AABB.from_pos_size(feetPos + _PLAYER_OFFSET_FEET_TO_CENTRE, _PLAYER_DIMENSIONS)
         camPos: glm.vec3 = self.pos + _PLAYER_CAMERA_INITIAL_OFFSET
-        self.camera: Camera = Camera(camPos.x, camPos.y, camPos.z, aspectRatio=GetApplication().get_window().get_aspect_ratio())
+        app = GetApplication()
+        if app is not None:
+            self.camera: Camera = Camera(camPos.x, camPos.y, camPos.z, aspectRatio=app.get_window().get_aspect_ratio())
+        else:
+            self.camera: Camera = Camera(camPos.x, camPos.y, camPos.z)
 
         # movement vector/values
         self.acceleration: glm.vec3 = glm.vec3()
@@ -76,7 +79,8 @@ class Player(PhysicalBox):
         return NMM(self.pos, s=_PLAYER_DIMENSIONS)
 
     @property
-    def playerMesh(self) -> CubeMesh:
+    def playerMesh(self):
+        return
         return CubeMesh(self.playerModelMatrix, alpha=0.5)
 
     @property
@@ -197,6 +201,7 @@ class Player(PhysicalBox):
                 self.interact()
 
     def handle_collision(self):
+        return
         # Get colliding blocks within the current bounds
         collidingBlocks: set[Block] = self.world.query_aabb_blocks(self.bounds)
         if len(collidingBlocks):
@@ -316,6 +321,7 @@ class Player(PhysicalBox):
         nearBest = np.inf
         farBest = np.inf
         nearPos: glm.vec3 = None
+        return
         hitBlocks: set[Block] = self.world.query_segment_blocks(ray)
 
         for block in hitBlocks:

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from Chunk import Chunk
 
 from Face import *
-from Face import _face_tex_id_cache, _faceTextureAtlas
+from Face import _face_tex_id_cache, face_texture_atlas
 
 from POGLE.Core.Core import ImDict
 
@@ -166,7 +166,7 @@ class MCPhys(PhysicalBox):
         cls.__aabb = aabb
 
 
-_face_model_mats: Dict[Side, glm.mat4] = {
+face_model_mats: Dict[Side, glm.mat4] = {
     Side.East: NMM(glm.vec3(-1.0, 0, 0), glm.vec3(0, 90, 0)),
     Side.South: NMM(glm.vec3(0, 0, 1.0)),
     Side.West: NMM(glm.vec3(1.0, 0, 0), glm.vec3(0, -90, 0)),
@@ -207,27 +207,16 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         self.initialized: bool = False
         self._awaiting_update: bool = False
 
-        self.face_ids: np.ndarray = np.array(
-            [
-                0, 1, 2,
-                3, 4, 5
-            ],
-            dtype=np.int32
-        )
-        self.face_tex_ids: np.ndarray = np.array(
-            [
-                FaceTexID.Null, FaceTexID.Null, FaceTexID.Null,
-                FaceTexID.Null, FaceTexID.Null, FaceTexID.Null
-            ],
-            dtype=np.int32
-        )
-        self.face_tex_sizes: np.ndarray = np.array(
-            [
-                FaceTexSizeID.Full, FaceTexSizeID.Full, FaceTexSizeID.Full,
-                FaceTexSizeID.Full, FaceTexSizeID.Full, FaceTexSizeID.Full
-            ],
-            dtype=np.int32
-        )
+        self.face_instance_data: List[glm.ivec3] = [
+            glm.ivec3(0, FaceTexID.Null, FaceTexSizeID.Full),
+            glm.ivec3(1, FaceTexID.Null, FaceTexSizeID.Full),
+            glm.ivec3(2, FaceTexID.Null, FaceTexSizeID.Full),
+            glm.ivec3(3, FaceTexID.Null, FaceTexSizeID.Full),
+            glm.ivec3(4, FaceTexID.Null, FaceTexSizeID.Full),
+            glm.ivec3(5, FaceTexID.Null, FaceTexSizeID.Full)
+        ]
+
+        self.instance_data: Optional[glm.mat4] = None
 
         self.neighbours: Dict[Side, Optional[Block]] = {
             Side.East: None,
@@ -244,6 +233,7 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
                 raise RuntimeError("Attempted to set chunk of a block already set in a chunk")
             self.chunk = chunk
         self.pos += self.chunk.pos + glm.vec3(0.5)
+        self.instance_data = NMM(self.pos, s=glm.vec3(0.5))
         self.chunk.block_query_cache[self.pos] = self
         if DO_FACE_HIDING:
             if self.block_id == BlockID.Air or any(
@@ -344,11 +334,11 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
 
     def hide_face(self, face: int):
         self._face_is_not_visible(face)
-        self.face_tex_ids[face] = FaceTexID.Null
+        self.face_instance_data[face][1] = FaceTexID.Null
 
     def reveal_face(self, face: int):
         self._face_is_visible(face)
-        self.face_tex_ids[face] = self.data.face_textures[face]
+        self.face_instance_data[face][1] = self.data.face_textures[face]
 
     @property
     def visible_faces(self):
@@ -397,6 +387,30 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
             _block_id_cache[int(nbt_data["BlockID"])]]  # Get Base BlockData from BlockID Enum
         # TODO: obtain saved block states from nbt compound tag
         return Block(block_in_chunk_index, block_data)  # Create Block Object
+
+
+class BlockShape(TexQuad):
+    def __init__(self,
+                 block_models: List[glm.mat4],
+                 face_data: List[glm.ivec3],
+                 *args, **kwargs):
+        super().__init__(
+            alphas=[1.0]*4,
+            model_mats=block_models,
+            model_div=6,
+            extra_attrs=[
+                VertexAttribute("a_FaceData", face_data, divisor=1)
+            ],
+            *args, **kwargs
+        )
+
+
+class BlockShapeMesh(ShapeMesh):
+    def __init__(self, block_shape: BlockShape,
+                 print_buffers=False, print_attributes=False):
+        num_instances = block_shape.data_layout.attributes[-1].size
+        super().__init__(block_shape, num_instances, ShaderProgram("block", "block"),
+                         print_buffers=print_buffers, print_attributes=print_attributes)
 
 
 if __name__ == "__main__":

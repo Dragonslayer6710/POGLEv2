@@ -239,32 +239,30 @@ class Region(MCPhys, aabb=REGION.AABB):
             chunks.append(chunk)
         return Region(wrid, chunks)
 
-    def get_shape(self):
+    def get_shape(self) -> BlockShape:
         block_instances = []
-        block_face_ids = []
-        block_face_tex_ids = []
-        block_face_tex_size_ids = []
+        block_face_instances = []
+        # block_face_ids = []
+        # block_face_tex_ids = []
+        # block_face_tex_size_ids = []
         for z in REGION.WIDTH_RANGE:
             for x in REGION.WIDTH_RANGE:
                 chunk = self.chunks[z][x]
                 if chunk is None:
                     continue
                 else:
-                    block_instances.extend(chunk.block_instances)
-                    block_face_ids.extend(chunk.block_face_ids)
-                    block_face_tex_ids.extend(chunk.block_face_tex_ids)
-                    block_face_tex_size_ids.extend(chunk.block_face_tex_size_ids)
-        return DataLayout(
-            [
-                VertexAttribute("a_Position", TexQuad._positions),
-                VertexAttribute("a_Alpha", [1.0, 1.0, 1.0, 1.0]),
-                VertexAttribute("a_TexUV", TexQuad._tex_uvs),
-                VertexAttribute("a_Model", block_instances, divisor=6),
-                VertexAttribute("a_FaceID", np.concatenate(block_face_ids), divisor=1),
-                VertexAttribute("a_FaceTexID", np.concatenate(block_face_tex_ids), divisor=1),
-                VertexAttribute("a_FaceTexSizeID", np.concatenate(block_face_tex_size_ids), divisor=1),
-            ]
+                    block_instances.extend(chunk.block_instance_data)
+                    block_face_instances.extend(chunk.block_face_instance_data)
+                    # block_face_ids.extend(chunk.block_face_ids)
+                    # block_face_tex_ids.extend(chunk.block_face_tex_ids)
+                    # block_face_tex_size_ids.extend(chunk.block_face_tex_size_ids)
+        return BlockShape(
+            block_instances,
+            block_face_instances
         )
+
+    def get_mesh(self) -> BlockShapeMesh:
+        return BlockShapeMesh(self.get_shape())
 
 
 if __name__ == "__main__":

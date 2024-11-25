@@ -76,7 +76,8 @@ def _decompress_chunk_data(compressed_data, compression_type):
 
 
 NULL_CHUNK_BLOCK_NDARRAY: np.ndarray = np.empty(CHUNK.NUM_BLOCKS, dtype=np.ndarray)
-
+NULL_CHUNK_BLOCK_LIST: List = [None] * CHUNK.NUM_BLOCKS
+NULL_CHUNK_BLOCK_FACE_LIST: List = [None] * CHUNK.NUM_BLOCKS * 6
 
 chunk_gen = TerrainGenerator(42)
 
@@ -118,13 +119,14 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
         self.initialized: bool = False
 
-        self.block_face_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
-        self.block_face_tex_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
-        self.block_face_tex_size_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
+        self.block_face_instance_data: List[glm.ivec3] = deepcopy(NULL_CHUNK_BLOCK_FACE_LIST)
+        # self.block_face_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
+        # self.block_face_tex_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
+        # self.block_face_tex_size_ids: np.ndarray = deepcopy(NULL_CHUNK_BLOCK_NDARRAY)
 
-        self.block_instances: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK.NUM_BLOCKS,),
-                                                                                        dtype=np.ndarray)
-
+        # self.block_instance_data: np.ndarray[np.ndarray[np.ndarray[np.float32]]] = np.empty((CHUNK.NUM_BLOCKS,),
+        #                                                                                     dtype=np.ndarray)
+        self.block_instance_data: List[glm.mat4] = deepcopy(NULL_CHUNK_BLOCK_LIST)
         self.neighbours: Dict[glm.vec2, Chunk] = {}
         self.block_query_cache: Dict[glm.vec3, Block] = {}
 
@@ -430,18 +432,14 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             chunk_nbt = nbtlib.File.parse(f)
         return cls.from_nbt(chunk_nbt)
 
-    def get_shape(self):
-        return DataLayout(
-            [
-                VertexAttribute("a_Position", TexQuad._positions),
-                VertexAttribute("a_Alpha", [1.0, 1.0, 1.0, 1.0]),
-                VertexAttribute("a_TexUV", TexQuad._tex_uvs),
-                VertexAttribute("a_Model", self.block_instances, divisor=6),
-                VertexAttribute("a_FaceID", np.concatenate(self.block_face_ids), divisor=1),
-                VertexAttribute("a_FaceTexID", np.concatenate(self.block_face_tex_ids), divisor=1),
-                VertexAttribute("a_FaceTexSizeID", np.concatenate(self.block_face_tex_size_ids), divisor=1),
-            ]
+    def get_shape(self) -> BlockShape:
+        return BlockShape(
+            self.block_instance_data,
+            self.block_face_instance_data
         )
+
+    def get_mesh(self) -> BlockShapeMesh:
+        return BlockShapeMesh(self.get_shape())
 
 
 class _Region(MCPhys, aabb=REGION.AABB):

@@ -13,14 +13,14 @@ from POGLE.Core.Core import Optional
 from POGLE.Core.Core import Renum
 from POGLE.Core.Core import glm
 
-_faceTextureAtlas: Optional[UniformTextureAtlas] = None
+face_texture_atlas: Optional[UniformTextureAtlas] = None
 
 
 def initFaceTextureAtlas():
-    global _faceTextureAtlas
-    if _faceTextureAtlas:
+    global face_texture_atlas
+    if face_texture_atlas:
         return
-    _faceTextureAtlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
+    face_texture_atlas = UniformTextureAtlas("terrain.png", glm.vec2(16, 16))
 
 
 class FaceTexID(Renum):

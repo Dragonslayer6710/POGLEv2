@@ -4,13 +4,14 @@ import random
 import numpy as np
 
 from MineClone.Player import *
-from POGLE.Geometry.Shape import QuadCube
+from POGLE.Event.Event import Event
 from POGLE.Shader import UniformBuffer, UniformBlock
 
 
 class Game:
     def __init__(self):
         initFaceTextureAtlas()
+        InitControls()
         #import dill
         #if os.path.exists("worldFile.dill"):
         #    with open("worldFile.dill", "rb") as f:
@@ -32,32 +33,42 @@ class Game:
         self.projection: glm.mat4 = glm.mat4()
         self.view: glm.mat4 = glm.mat4()
 
-        self.MatricesUBO: UniformBuffer = UniformBuffer()
-        self.matUB: UniformBlock = UniformBlock.create([self.projection, self.view])
-
-        self.BlockSidesUBO: UniformBuffer = UniformBuffer()
-        self.blockSidesUB: UniformBlock = UniformBlock.create(
-            QuadCube.face_matrices,
+        self.ubo_mats: UniformBuffer = UniformBuffer()
+        self.ub_mats: UniformBlock = UniformBlock.create(
             UniformBlockLayout(
-                "BlockSides",
+                "ub_Matrices",
                 [
-                    VA.Float().Mat4() for i in range(6)
+                    VertexAttribute("u_Projection", self.projection),
+                    VertexAttribute("u_View", self.view)
                 ]
             )
         )
-        self.BlockSidesUBO.bind()
-        self.BlockSidesUBO.buffer_data(
-            self.blockSidesUB.bytes,
-            self.blockSidesUB.data
+
+        self.ubo_face_transforms = UniformBuffer()
+        self.ub_face_transforms = UniformBlock.create(
+            UniformBlockLayout(
+                "ub_FaceTransforms",
+            [
+                VertexAttribute("u_FaceTransform", [np.array(mat.to_list()) for mat in face_model_mats.values()])
+            ]
+            )
         )
-        self.BlockSidesUBO.unbind()
-        self.BlockSidesUBO.bind_block(1)
+        self.ubo_face_transforms.bind_block(self.ub_face_transforms.binding)
+        self.ubo_face_transforms.bind()
+        self.ubo_face_transforms.buffer_data(
+            self.ub_face_transforms.data
+        )
+        self.ubo_face_transforms.unbind()
 
         self.world: World = World()
+        self.mesh = self.world.spawn_region.get_mesh()
+        self.mesh.add_texture("tex0", face_texture_atlas)
+
+        self.mesh.shader.use()
+        self.mesh.bind_textures()
         self.player: Player = Player(self.world, glm.vec3(0,self.world.max.y+2,0))
-        self.world.update(self.playerCam.get_frustum())
-        self.worldRenderer: WorldRenderer = WorldRenderer(self.world)
-        self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
+        # self.world.update()
+        # self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
 
     @property
     def playerCam(self) -> Camera:
@@ -65,7 +76,7 @@ class Game:
 
     def update(self, deltaTime: float, projection: glm.mat4, view: glm.mat4):
         self.player.update(deltaTime)
-        self.worldRenderer.update_origin(self.player.pos)
+        # self.worldRenderer.update_origin(self.player.pos)
 
         dataElements = []
         newProjection = self.projection != projection
@@ -78,19 +89,19 @@ class Game:
             dataElements.append(self.view)
         numElements = len(dataElements)
         if numElements:
-            self.MatricesUBO.bind()
+            self.ubo_mats.bind()
             if numElements == 2:
-                self.matUB.set_data([projection, view])
-                self.MatricesUBO.buffer_data(self.matUB.bytes, self.matUB.data)
+                self.ub_face_transforms.set_data([projection, view])
+                self.ubo_mats.buffer_data(self.ub_mats.data)
             else:
-                data = DataPoint.prepare_data(dataElements, DataLayout([FloatDA.Mat4()]))
+                data = np.array(dataElements).reshape(-1, 4, 4).transpose(0, 2, 1)
                 offset = 0
                 if newView:
-                    self.world.update(self.playerCam.get_frustum(view, projection))
+                    # self.world.update(self.playerCam.get_frustum(view, projection))
                     offset = 64  # Offset to edit only the view matrix
-                self.MatricesUBO.buffer_sub_data(offset, 64, data)
-            self.MatricesUBO.unbind()
-            self.MatricesUBO.bind_block()
+                self.ubo_mats.buffer_sub_data(offset, data)
+            self.ubo_mats.unbind()
+            self.ubo_mats.bind_block()
 
     shader = None
     mesh = None
@@ -155,6 +166,26 @@ class Game:
         #
         # self.mesh.draw(self.shader)
 
-        self.worldRenderer.draw()
-        self.player.draw()
-        self.crosshairMesh.draw()
+        self.mesh.draw()
+        # self.worldRenderer.draw()
+        # self.player.draw()
+        # self.crosshairMesh.draw()
+
+    def OnEvent(self, e: Event):
+        typ = e.getEventType()
+        if e.isInCategory(Event.Category.Mouse):
+            if typ == Event.Type.MouseButtonPressed:
+                Input.SetState(e.getMouseButton(), Input.State.PRESS)
+            elif typ == Event.Type.MouseButtonReleased:
+                Input.SetState(e.getMouseButton(), Input.State.RELEASE)
+            elif typ == Event.Type.MouseMoved:
+                inpStat.s_NextMousePosX = e.getX()
+                inpStat.s_NextMousePosY = e.getY()
+            elif typ == Event.Type.MouseScrolled:
+                inpStat.s_ScrollOffsetX = e.getXOffset()
+                inpStat.s_ScrollOffsetY = e.getYOffset()
+        elif e.isInCategory(Event.Category.Keyboard):
+            if typ == Event.Type.KeyPressed:
+                Input.SetState(e.getKeyCode(), Input.State.PRESS)
+            elif typ == Event.Type.KeyReleased:
+                Input.SetState(e.getKeyCode(), Input.State.RELEASE)

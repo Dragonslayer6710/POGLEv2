@@ -2,16 +2,17 @@
 #version 450 core
 // Per Vertex
 layout (location = 0) in vec3 a_Position;
-layout (location = 1) in float a_Alpha;
-layout (location = 2) in vec2 a_TexUV;
+layout (location = 1) in vec2 a_TexUV;
+layout (location = 2) in float a_Alpha;
 
 // Per Block
 layout (location = 3) in mat4 a_Model;
 
 // Per Face
-layout (location = 7) in int a_FaceID;
-layout (location = 8) in int a_FaceTexID;
-layout (location = 9) in int a_FaceTexSizeID;
+layout (location = 7) in ivec3 a_FaceData;
+//layout (location = 7) in int a_FaceID;
+//layout (location = 8) in int a_FaceTexID;
+//layout (location = 9) in int a_FaceTexSizeID;
 
 out vec2 vTexUV;
 
@@ -42,6 +43,8 @@ layout (std140) uniform ub_FaceTexSizes
 void main(){
     // Finally, apply the view and projection transformations.
     // gl_Position = vec4(a_Position, 1.0);
+    int a_FaceID = a_FaceData[0], a_FaceTexID = a_FaceData[1], a_FaceTexSizeID = a_FaceData[2];
+
     mat4 face_transform;
     face_transform = a_Model * u_FaceTransforms[a_FaceID];
 

@@ -327,8 +327,28 @@ class World(MCPhys, aabb=WORLD.AABB):
 
 @dataclass
 class ChunkRange:
+    world: World
     size: int
     origin: glm.ivec2 = glm.ivec2()
+
+
+    def __post_init__(self):
+        self.chunks: Optional[List[List[Chunk]]] = None
+        self.setup_chunk_grid()
+
+    def setup_chunk_grid(self):
+        self.chunks = []
+        half_size = self.size // 2
+        for z in range(-half_size, half_size + 1):
+            self.chunks.append([])
+            for x in range(-half_size, half_size + 1):
+                offset = glm.ivec2(x, z)
+                array_pos = offset + half_size
+                pos = (self.origin + offset) * CHUNK.WIDTH
+
+                region_pos = w_to_wr(pos)
+                chunk_pos = w_to_rc(pos)
+                self.chunks[array_pos[1]][array_pos[0]] = self.world.get_region(region_pos).get_chunk(chunk_pos)
 
 
 do_profile = True

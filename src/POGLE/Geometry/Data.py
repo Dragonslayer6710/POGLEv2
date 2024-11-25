@@ -296,7 +296,10 @@ class DataLayout:
             vertex_dtype = np.dtype(self._dtypes[divisor])
             vertex_data = np.zeros(self._attributes[divisor][0].size, dtype=vertex_dtype)
             for attribute in self._attributes[divisor]:
-                vertex_data[attribute.name] = attribute.data
+                try:
+                    vertex_data[attribute.name] = attribute.data
+                except ValueError:
+                    print()
             if data is None:
                 data = vertex_data.tobytes()
             else:
@@ -355,7 +358,7 @@ class VertexArray:
         if self.ebo:
             self.ebo.unbind()
 
-    def add_vbo(self, layout: DataLayout, usage=GL_STATIC_DRAW, print_buffer=True) -> VertexBuffer:
+    def add_vbo(self, layout: DataLayout, usage=GL_STATIC_DRAW, print_buffer=False) -> VertexBuffer:
         # Create and bind the vertex buffer object
         buffer: VertexBuffer = self.buffer_manager.create_vbo(usage)
 
@@ -382,7 +385,7 @@ class VertexArray:
 
         return buffer
 
-    def set_ebo(self, usage=GL_STATIC_DRAW, data: np.ndarray = None, print_buffer=True) -> ElementBuffer:
+    def set_ebo(self, usage=GL_STATIC_DRAW, data: np.ndarray = None, print_buffer=False) -> ElementBuffer:
         ebo: ElementBuffer = self.buffer_manager.create_ebo(usage)
         ebo.bind()
         ebo.buffer_data(data.tobytes())
