@@ -46,12 +46,12 @@ class Camera:
 
     def get_frustum(self, view_matrix: glm.mat4 = None, proj_matrix: glm.mat4 = None):
         if view_matrix is None:
-            view_matrix = self.GetViewMatrix()
+            view_matrix = self.get_view_matrix()
         if proj_matrix is None:
             proj_matrix = self.get_projection()
         return Frustum(view_matrix, proj_matrix)
 
-    def GetViewMatrix(self) -> glm.mat4:
+    def get_view_matrix(self) -> glm.mat4:
         return glm.lookAt(self.Position, self.Position + self.Front, self.Up)
 
     def get_projection(self):

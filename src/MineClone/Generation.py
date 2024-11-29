@@ -11,8 +11,8 @@ from pyfastnoiselite.pyfastnoiselite import (
     FastNoiseLite, NoiseType, FractalType
 )
 
-from Block import *
-from Biome import *
+from MineClone.Block import *
+from MineClone.Biome import *
 
 if TYPE_CHECKING:
     from Chunk import Chunk

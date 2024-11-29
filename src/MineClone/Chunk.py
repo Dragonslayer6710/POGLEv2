@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from io import BytesIO
 import zlib
+from copy import deepcopy
 
-import numpy as np
-
-from Entity import *
-from Biome import *
-from Generation import TerrainGenerator
+from MineClone.Entity import *
+from MineClone.Biome import *
+from MineClone.Generation import TerrainGenerator
 
 from dataclasses import dataclass, field
 from collections import deque
 
 if TYPE_CHECKING:
-    from Region import Region
+    from MineClone.Region import Region
 
 
 def block_state_compound(blocks: List[Block]) -> nbtlib.Compound:
@@ -88,7 +87,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
     )
     entities: List[Entity] = field(default_factory=list)
     tile_entities: List[TileEntity] = field(default_factory=list)
-    height_map: List[List[int]] = field(default_factory=lambda: copy(CHUNK.NULL_HEIGHT_MAP))
+    height_map: List[List[int]] = field(default_factory=lambda: CHUNK.NULL_HEIGHT_MAP.copy())
     biomes: List[List[List[Optional[Biome], ...], ...]] = field(
         default_factory=lambda: np.empty((CHUNK.HEIGHT, CHUNK.WIDTH, CHUNK.WIDTH), dtype=object)
     )
@@ -261,6 +260,45 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
                 raise Exception("Wrong Block!")
         self.block_query_cache[block_pos] = block
         return block
+
+    def query(self, bounds: AABB) -> List[Block]:
+        blocks = []
+        min_block = self.get_block(bounds.min)
+        valid_block = min_block is not None
+        if valid_block:
+            if not min_block.is_solid:
+                valid_block = False
+            else:
+                blocks.append(min_block)
+        if not valid_block:
+            min_block = self.get_block(bounds.pos)
+            valid_block = min_block is not None
+            if valid_block:
+                if not min_block.is_solid:
+                    valid_block = False
+                else:
+                    blocks.append(min_block)
+            if not valid_block:
+                max_block = self.get_block(bounds.max)
+                valid_block = max_block is not None
+                if valid_block:
+                    if not max_block.is_solid:
+                        valid_block = False
+                    else:
+                        blocks.append(max_block)
+                else:
+                    pass#raise RuntimeError("No blocks found for bounds: " + str(bounds))
+            return blocks
+
+        max_block = self.get_block(bounds.max)
+        if max_block is not min_block:
+            for y in range(min_block.index.x + 1, max_block.index.x + 1):
+                for z in range(min_block.index.y + 1, max_block.index.y + 1):
+                    for x in range(min_block.index.z + 1, max_block.index.z + 1):
+                        print((x, y, z))
+                        blocks.append(self.blocks[y][z][x])
+        return blocks
+
 
     def to_nbt(self) -> nbtlib.Compound:
         return nbtlib.Compound({
@@ -442,21 +480,21 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         return BlockShapeMesh(self.get_shape())
 
 
-class _Region(MCPhys, aabb=REGION.AABB):
-    chunks: List[Chunk] = []
-
-    def enqueue_chunk(self, chunk: Chunk):
-        self.chunks.append(chunk)
-
-    def update(self):
-        for chunk in self.chunks:
-            chunk.update()
-
-    def get_block(self, block_pos: glm.vec3):
-        return None
-
-
 if __name__ == "__main__":
+    class _Region(MCPhys, aabb=REGION.AABB):
+        chunks: List[Chunk] = []
+
+        def enqueue_chunk(self, chunk: Chunk):
+            self.chunks.append(chunk)
+
+        def update(self):
+            for chunk in self.chunks:
+                chunk.update()
+
+        def get_block(self, block_pos: glm.vec3):
+            return None
+
+    from timeit import timeit
     a: Chunk = Chunk(0)
     a.initialize(_Region())
 

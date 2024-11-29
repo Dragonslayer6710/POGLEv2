@@ -3,31 +3,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 from dataclasses import dataclass, field
 
-from Constants import *
-
-import glm
-
-from POGLE.Geometry.Data import NMM
+from MineClone.Constants import *
 from POGLE.Renderer.Mesh import *
-from POGLE.Shader import ShaderProgram, UniformBuffer, UniformBlock
+from POGLE.Shader import ShaderProgram
 
 if TYPE_CHECKING:
-    from Chunk import Chunk
+    from MineClone.Chunk import Chunk
 
-from Face import *
-from Face import _face_tex_id_cache, face_texture_atlas
+from MineClone.Face import FaceTexID, FaceTexSizeID
 
 from POGLE.Core.Core import ImDict
 
-from POGLE.Core.Core import Union, Any, Dict, List, Tuple
+from POGLE.Core.Core import Union, Any, Dict, List
 from POGLE.Core.Core import np
 
 from POGLE.Physics.Collisions import PhysicalBox, AABB
-
-from timeit import timeit
-import cProfile
-from copy import copy, deepcopy
-import pickle
 
 import struct
 import nbtlib
@@ -411,13 +401,3 @@ class BlockShapeMesh(ShapeMesh):
         num_instances = block_shape.data_layout.attributes[-1].size
         super().__init__(block_shape, num_instances, ShaderProgram("block", "block"),
                          print_buffers=print_buffers, print_attributes=print_attributes)
-
-
-if __name__ == "__main__":
-    def test():
-        Block(0)
-
-
-    num_tests = 1_000_000
-    filename = "block"
-    cProfile.run(f"[test() for _ in range({num_tests})]", f"{filename}.prof")

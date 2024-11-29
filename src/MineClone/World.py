@@ -4,8 +4,7 @@ import pstats
 
 import os.path
 
-from Region import *
-import Chunk
+from MineClone.Region import *
 
 gen_options_buffet = nbtlib.Compound({
     "biome_source": nbtlib.Compound({
@@ -58,7 +57,7 @@ class World(MCPhys, aabb=WORLD.AABB):
         self.file_path = f"{self.file_location}\\{self.world_name}"
         del self.file_location
 
-        self.regions = copy(WORLD.NONE_LIST)
+        self.regions = WORLD.NONE_LIST.copy()
 
         self._update_deque: deque[Region] = deque()
 
@@ -324,6 +323,31 @@ class World(MCPhys, aabb=WORLD.AABB):
         return BlockShape(self._block_instances, self._face_instances)
         # mesh = ShapeMesh(bs)
 
+    def query(self, bounds: AABB) -> List[Region]:
+        regions = []
+        min_region = self.get_region(bounds.min.xz)
+        if min_region is not None:
+            regions.append(min_region)
+        else:
+            min_region = self.get_region(bounds.pos.xz)
+            if min_region is not None:
+                regions.append(min_region)
+            else:
+                max_region = self.get_region(bounds.max.xz)
+                if max_region is not None:
+                    regions.append(max_region)
+                else:
+                    raise RuntimeError("No regions found for bounds: " + str(bounds))
+            return regions
+
+        max_region = self.get_region(bounds.max.xz)
+        if max_region is not min_region:
+            for x in range(min_region.index.x + 1, max_region.index.x + 1):
+                for z in range(min_region.index.z + 1, max_region.index.z+1):
+                    regions.append(self.regions[x][z])
+        return regions
+
+
 
 @dataclass
 class ChunkRange:
@@ -379,6 +403,7 @@ if __name__ == "__main__":
 
 
     if do_profile:
+        import cProfile
         # Run the main profiling function
         profiler = cProfile.Profile()
         profiler.enable()

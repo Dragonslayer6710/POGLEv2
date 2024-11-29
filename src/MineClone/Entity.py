@@ -1,7 +1,5 @@
-import nbtlib
-
-from Block import *
-
+from dataclasses import dataclass
+from MineClone.Block import *
 
 @dataclass
 class Entity(MCPhys, aabb=glm.vec3()):

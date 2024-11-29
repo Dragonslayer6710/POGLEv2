@@ -67,7 +67,7 @@ class HelloLayer(Layer):
             #self.testBlockShader = ShaderProgram("block", "block")
             #self.testBlockShader.use()
 
-            self.renderDistance = game.worldRenderer._render_distance
+            # self.renderDistance = game.worldRenderer._render_distance
             self.maxRenderDistance = 1#_WORLD_CHUNK_AXIS_LENGTH
             self.minRenderDistance = 1
             self.renderDistanceRangeSize = self.maxRenderDistance - self.minRenderDistance + 1
@@ -77,9 +77,9 @@ class HelloLayer(Layer):
             glClearColor(0.5, 0.3, 0.1, 1.0)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
             glEnable(GL_BLEND)
-            glEnable(GL_CULL_FACE)
-            glCullFace(GL_BACK)
-            glFrontFace(GL_CW)
+            # glEnable(GL_CULL_FACE)
+            # glCullFace(GL_BACK)
+            # glFrontFace(GL_CCW)
             # wcMesh = WireframeCubeMesh()
             self.initUpdate = False
         self._Renderer.clear()
@@ -114,7 +114,7 @@ class HelloLayer(Layer):
         # self.blockShader.setMat4("uProjection", projection)
         # self.blockShader.setMat4("uView", game.playerCam.GetViewMatrix())
         projection = game.playerCam.get_projection()
-        view = game.playerCam.GetViewMatrix()
+        view = game.playerCam.get_view_matrix()
         game.update(deltaTime, projection, view)
         game.draw()
 

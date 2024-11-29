@@ -1,26 +1,16 @@
 from __future__ import annotations
 
-import os
-import pickle
-import struct
-from dataclasses import dataclass, field
-from typing import Callable, BinaryIO
-
-import glm
-import nbtlib
-import numpy as np
-
-from Chunk import *
+from MineClone.Chunk import *
 
 if TYPE_CHECKING:
-    from World import World
+    from MineClone.World import World
 
 PROCESS_POOL_SIZE = max(1, os.cpu_count() - 1)
 
 
 @dataclass
 class Region(MCPhys, aabb=REGION.AABB):
-    chunks: List[List[Optional[Chunk]]] = field(default_factory=lambda: copy(REGION.NONE_LIST))
+    chunks: List[List[Optional[Chunk]]] = field(default_factory=lambda: REGION.NONE_LIST.copy())
 
     _from_bytes: bool = False
     world: Optional[World] = None
@@ -138,6 +128,30 @@ class Region(MCPhys, aabb=REGION.AABB):
         chunk = self.get_chunk(block_pos.xz)
         if chunk is not None:
             return chunk.get_block(block_pos)
+
+    def query(self, bounds: AABB) -> List[Chunk]:
+        chunks = []
+        min_chunk = self.get_chunk(bounds.min.xz)
+        if min_chunk is not None:
+            chunks.append(min_chunk)
+        else:
+            min_chunk = self.get_chunk(bounds.pos.xz)
+            if min_chunk is not None:
+                chunks.append(min_chunk)
+            else:
+                max_chunk = self.get_chunk(bounds.max.xz)
+                if max_chunk is not None:
+                    chunks.append(max_chunk)
+                else:
+                    raise RuntimeError("No chunks found for bounds: " + str(bounds))
+            return chunks
+
+        max_chunk = self.get_chunk(bounds.max.xz)
+        if max_chunk is not min_chunk:
+            for x in range(min_chunk.index.x + 1, max_chunk.index.x + 1):
+                for z in range(min_chunk.index.z + 1, max_chunk.index.z+1):
+                    chunks.append(self.chunks[x][z])
+        return chunks
 
     @property
     def non_none_chunks(self) -> Tuple[Chunk]:

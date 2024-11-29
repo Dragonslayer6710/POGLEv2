@@ -40,6 +40,8 @@ class Player(PhysicalBox):
 
     def __init__(self, world: World, feetPos: glm.vec3):
         self.world: World = world
+        self.regions: List[Region] = []
+        self.chunks: List[List[Chunk]] = []
 
         self.bounds = AABB.from_pos_size(feetPos + _PLAYER_OFFSET_FEET_TO_CENTRE, _PLAYER_DIMENSIONS)
         camPos: glm.vec3 = self.pos + _PLAYER_CAMERA_INITIAL_OFFSET
@@ -201,13 +203,58 @@ class Player(PhysicalBox):
                 self.interact()
 
     def handle_collision(self):
-        return
-        # Get colliding blocks within the current bounds
-        collidingBlocks: set[Block] = self.world.query_aabb_blocks(self.bounds)
-        if len(collidingBlocks):
-            self.collidingBlockPositions = [block.pos for block in collidingBlocks]
-        elif self.collidingBlockPositions:
-            self.collidingBlockPositions = None
+        colliding_blocks = []
+
+        # Check if still intersecting current regions
+        region_cnt: int = 0
+        num_regions: int = len(self.regions)
+        if num_regions == 0:  # query new regions if all are non-intersecting
+            self.regions = self.world.query(self.bounds)
+            num_regions = len(self.regions)
+            if not num_regions:
+                return # No regions so no collisions
+            self.chunks = [[] for _ in range(num_regions)]
+        while region_cnt != num_regions:
+            region = self.regions[region_cnt] # intersected region
+            if not region.bounds.intersectAABB(self.bounds):
+                # Remove regions that are no longer intersecting
+                self.regions.pop(region_cnt)
+                self.chunks.pop(region_cnt)
+                num_regions -= 1
+            else:
+                # Check if still intersecting current chunks
+                chunk_cnt = 0
+                num_chunks_at_region = len(self.chunks[region_cnt])
+                if num_chunks_at_region == 0:
+                    self.chunks[region_cnt] = region.query(self.bounds)
+                    num_chunks_at_region = len(self.chunks[region_cnt])
+                    if not num_chunks_at_region:
+                        raise RuntimeError("No intersected chunks at intersected region")
+                region_chunks = self.chunks[region_cnt]
+                while chunk_cnt != num_chunks_at_region:
+                    chunk = region_chunks[chunk_cnt]
+                    if not chunk.bounds.intersectAABB(self.bounds):
+                        region_chunks.pop(chunk_cnt)
+                        num_chunks_at_region -= 1
+                    else:
+                        blocks = chunk.query(self.bounds)
+                        block_cnt = 0
+                        num_blocks_at_region_chunk = len(blocks)
+                        while block_cnt != num_blocks_at_region_chunk:
+                            block = blocks[block_cnt]
+                            if not block.bounds.intersectAABB(self.bounds):
+                                blocks.pop(block_cnt)
+                                num_blocks_at_region_chunk -= 1
+                            else:
+                                block_cnt += 1
+                        colliding_blocks.extend(blocks)
+                        chunk_cnt += 1
+                region_cnt += 1
+        num_blocks = len(colliding_blocks)
+        if not num_blocks:
+            return # No colliding blocks so no collisions
+
+        print(block.pos)
         grounded: bool = False  # Assume not grounded initially
 
         # Initialize the correction vector and collision array
@@ -215,7 +262,7 @@ class Player(PhysicalBox):
         collisions = [0.0 for _ in range(6)]  # Stores corrections in [+, -, +, -, +, -] for [x, y, z]
 
         # Iterate through each block to check for collisions
-        for block in collidingBlocks:
+        for block in colliding_blocks:
             if not block.is_solid:
                 continue
 

@@ -7,10 +7,11 @@ from MineClone.Player import *
 from POGLE.Event.Event import Event
 from POGLE.Shader import UniformBuffer, UniformBlock
 
+import MineClone.Face as face
 
 class Game:
     def __init__(self):
-        initFaceTextureAtlas()
+        face.init_texture_atlas()
         InitControls()
         #import dill
         #if os.path.exists("worldFile.dill"):
@@ -33,24 +34,28 @@ class Game:
         self.projection: glm.mat4 = glm.mat4()
         self.view: glm.mat4 = glm.mat4()
 
-        self.ubo_mats: UniformBuffer = UniformBuffer()
-        self.ub_mats: UniformBlock = UniformBlock.create(
-            UniformBlockLayout(
-                "ub_Matrices",
-                [
-                    VertexAttribute("u_Projection", self.projection),
-                    VertexAttribute("u_View", self.view)
-                ]
-            )
+        self.ubo_mats = UniformBuffer()
+        self.ub_mats = UniformBlock.create(UniformBlockLayout(
+            "ub_Matrices",
+            [
+                VertexAttribute("u_Projection", self.projection),
+                VertexAttribute("u_View", self.view)
+            ]
+        ))
+        self.ubo_mats.bind_block(self.ub_mats.binding)
+        self.ubo_mats.bind()
+        self.ubo_mats.buffer_data(
+            self.ub_mats.data
         )
+        self.ubo_mats.unbind()
 
         self.ubo_face_transforms = UniformBuffer()
         self.ub_face_transforms = UniformBlock.create(
             UniformBlockLayout(
                 "ub_FaceTransforms",
-            [
-                VertexAttribute("u_FaceTransform", [np.array(mat.to_list()) for mat in face_model_mats.values()])
-            ]
+                [
+                    VertexAttribute("u_FaceTransform", [np.array(mat.to_list()) for mat in face_model_mats.values()])
+                ]
             )
         )
         self.ubo_face_transforms.bind_block(self.ub_face_transforms.binding)
@@ -60,13 +65,67 @@ class Game:
         )
         self.ubo_face_transforms.unbind()
 
-        self.world: World = World()
+        self.ubo_face_tex_positions = UniformBuffer()
+        self.ub_face_tex_positions = UniformBlock.create(
+            UniformBlockLayout(
+                "ub_FaceTexPositions",
+                [
+                    VertexAttribute(
+                        "u_TexPositions",
+                        [
+                            face.texture_atlas.get_sub_texture(i).pos
+                            for i in range(4)
+                        ]
+                    )
+                ]
+            )
+        )
+        self.ubo_face_tex_positions.bind_block(self.ub_face_tex_positions.binding)
+        self.ubo_face_tex_positions.bind()
+        self.ubo_face_tex_positions.buffer_data(
+            self.ub_face_tex_positions.data
+        )
+        self.ubo_face_tex_positions.unbind()
+
+        self.ubo_face_tex_sizes = UniformBuffer()
+        self.ub_face_tex_sizes = UniformBlock.create(
+            UniformBlockLayout(
+                "ub_FaceTexSizes",
+                [
+                    VertexAttribute(
+                        "u_TexSizes",
+                        [face.texture_atlas.get_sub_texture(0).size]
+                    )
+                ]
+            )
+        )
+        self.ubo_face_tex_sizes.bind_block(self.ub_face_tex_sizes.binding)
+        self.ubo_face_tex_sizes.bind()
+        self.ubo_face_tex_sizes.buffer_data(
+            self.ub_face_tex_sizes.data
+        )
+
+        self.ubo_face_tex_sizes.unbind()
+
+        self.ubo_face_tex_positions.print_data()
+        self.ubo_face_tex_sizes.print_data()
+
+        self.world = World()
         self.mesh = self.world.spawn_region.get_mesh()
-        self.mesh.add_texture("tex0", face_texture_atlas)
+        self.mesh.add_texture("tex0", face.texture_atlas)
+
+        self.mesh.bind_uniform_blocks(
+            [
+                "ub_Matrices",
+                "ub_FaceTransforms",
+                "ub_FaceTexPositions",
+                "ub_FaceTexSizes"
+            ]
+        )
 
         self.mesh.shader.use()
         self.mesh.bind_textures()
-        self.player: Player = Player(self.world, glm.vec3(0,self.world.max.y+2,0))
+        self.player: Player = Player(self.world, glm.vec3(0,CHUNK.HEIGHT+2,0))
         # self.world.update()
         # self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
 
@@ -77,31 +136,36 @@ class Game:
     def update(self, deltaTime: float, projection: glm.mat4, view: glm.mat4):
         self.player.update(deltaTime)
         # self.worldRenderer.update_origin(self.player.pos)
-
-        dataElements = []
-        newProjection = self.projection != projection
-        newView = self.view != view
-        if newProjection:
-            self.projection = projection
-            dataElements.append(self.projection)
-        if newView:
-            self.view = view
-            dataElements.append(self.view)
-        numElements = len(dataElements)
-        if numElements:
-            self.ubo_mats.bind()
-            if numElements == 2:
-                self.ub_face_transforms.set_data([projection, view])
-                self.ubo_mats.buffer_data(self.ub_mats.data)
-            else:
-                data = np.array(dataElements).reshape(-1, 4, 4).transpose(0, 2, 1)
-                offset = 0
-                if newView:
-                    # self.world.update(self.playerCam.get_frustum(view, projection))
-                    offset = 64  # Offset to edit only the view matrix
-                self.ubo_mats.buffer_sub_data(offset, data)
-            self.ubo_mats.unbind()
-            self.ubo_mats.bind_block()
+        self.ubo_mats.bind()
+        self.ub_mats.set_data([projection, view])  # Assuming you have modified setData to handle updates
+        self.ubo_mats.buffer_data(self.ub_mats.data)
+        self.ubo_mats.unbind()
+        # dataElements = []
+        # newProjection = self.projection != projection
+        # newView = self.view != view
+        # if newProjection:
+        #     print("New projection")
+        #     self.projection = projection
+        #     dataElements.append(self.projection)
+        # if newView:
+        #     print("New view")
+        #     self.view = view
+        #     dataElements.append(self.view)
+        # numElements = len(dataElements)
+        # if numElements:
+        #     self.ubo_mats.bind()
+        #     if numElements == 2:
+        #         self.ub_face_transforms.set_data([projection, view])
+        #         self.ubo_mats.buffer_data(self.ub_mats.data)
+        #     else:
+        #         data = np.array(dataElements).reshape(-1, 4, 4).transpose(0, 2, 1)
+        #         offset = 0
+        #         if newView:
+        #             # self.world.update(self.playerCam.get_frustum(view, projection))
+        #             offset = 64  # Offset to edit only the view matrix
+        #         self.ubo_mats.buffer_sub_data(offset, data)
+        #     self.ubo_mats.unbind()
+        #     self.ubo_mats.bind_block()
 
     shader = None
     mesh = None
@@ -165,7 +229,6 @@ class Game:
         #     self.mesh = BlockMesh(blocks.faceIDs, blocks.faceTexDims, blocks.blockPositions)
         #
         # self.mesh.draw(self.shader)
-
         self.mesh.draw()
         # self.worldRenderer.draw()
         # self.player.draw()
