@@ -125,7 +125,7 @@ class Game:
 
         self.mesh.shader.use()
         self.mesh.bind_textures()
-        self.player: Player = Player(self.world, glm.vec3(0,CHUNK.HEIGHT+2,0))
+        self.player: Player = Player(self.world, glm.vec3(1,CHUNK.HEIGHT+2,1))
         # self.world.update()
         # self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
 

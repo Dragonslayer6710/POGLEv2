@@ -49,8 +49,8 @@ current_angle = 0.0  # Current rotation angle in degrees
 y_rotation_speed = 15.0  # Degrees per second for y-axis motion
 current_y_angle = 0.0  # Current rotation angle for y-axis motion
 
-draw_hitboxes = False
-test_game = True
+draw_hitboxes = True
+test_game = False
 def _main():
     global current_angle, current_y_angle
     if not test_game:
@@ -89,15 +89,26 @@ def _main():
                 for block in blocks
             ], divisor=1)
 
-            cube_data_layout = DataLayout([
-                VertexAttribute("a_Position", Cube._positions),
-                VertexAttribute("a_Alpha", [0.15 for _ in range(8)]),
-                block_mats,
-            ])
+            hitbox_data = [
+                [region_mats, [Color.RED] * 8],
+                [chunk_mats, [Color.BLUE] * 8],
+                [block_mats, [Color.GREEN] * 8]
+            ]
 
-            cube_vao = VertexArray()
-            cube_vao.set_ebo(data=np.array(Cube._indices, dtype=np.ushort))
-            cube_vao.add_vbo(cube_data_layout)
+            hitbox_data_layouts = [
+                DataLayout([
+                    VertexAttribute("a_Position", Cube._positions),
+                    VertexAttribute("a_Colour", colors),
+                    VertexAttribute("a_Alpha", [0.15 for _ in range(8)]),
+                    mats,
+                ]) for (mats, colors) in hitbox_data
+            ]
+
+            hitbox_vaos = [None] * len(hitbox_data_layouts)
+            for i, hitbox_dl in enumerate(hitbox_data_layouts):
+                hitbox_vaos[i] = VertexArray()
+                hitbox_vaos[i].set_ebo(data=np.array(Cube._indices, dtype=np.ushort))
+                hitbox_vaos[i].add_vbo(hitbox_dl)
             cube_shader = ShaderProgram("cube", "cube")
         #chunk = Chunk()
         #r = _Region()
@@ -343,9 +354,10 @@ def _main():
 
             if draw_hitboxes:
                 cube_shader.use()
-                cube_vao.bind()
-                glDrawElementsInstanced(GL_TRIANGLES, len(Cube._indices), GL_UNSIGNED_SHORT, None, cube_data_layout.attributes[-1].size)
-                cube_vao.unbind()
+                for hitbox_vao, hitbox_dl in zip(hitbox_vaos, hitbox_data_layouts):
+                    hitbox_vao.bind()
+                    glDrawElementsInstanced(GL_TRIANGLES, len(Cube._indices), GL_UNSIGNED_SHORT, None, hitbox_dl.attributes[-1].size)
+                    hitbox_vao.unbind()
         else:
             game.update(delta_time, projection, view)
             game.draw()

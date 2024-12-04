@@ -148,8 +148,8 @@ class Region(MCPhys, aabb=REGION.AABB):
 
         max_chunk = self.get_chunk(bounds.max.xz)
         if max_chunk is not min_chunk:
-            for x in range(min_chunk.index.x + 1, max_chunk.index.x + 1):
-                for z in range(min_chunk.index.z + 1, max_chunk.index.z+1):
+            for x in range(min_chunk.index[0] + 1, max_chunk.index[0] + 1):
+                for z in range(min_chunk.index[1] + 1, max_chunk.index[1]+1):
                     chunks.append(self.chunks[x][z])
         return chunks
 

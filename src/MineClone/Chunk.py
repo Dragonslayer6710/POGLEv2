@@ -251,19 +251,15 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             self.neighbours[chunk_offset] = neighbour
         block = neighbour.get_block(local_pos)
         if block is not None:
-            if block_pos != block.pos:
-                print(self.pos)
-                print(self.index)
-                print(block_pos)
-                print(local_pos)
-                quit()
-                raise Exception("Wrong Block!")
+            pos_delta = block_pos - block.pos
+            if glm.round(pos_delta) != glm.vec3(0):
+                raise Exception(f"Wrong Block!:\n\t- Expected: {block_pos}\n\t- Obtained: {block.pos}")
         self.block_query_cache[block_pos] = block
         return block
 
     def query(self, bounds: AABB) -> List[Block]:
         blocks = []
-        min_block = self.get_block(bounds.min)
+        min_block = self.get_block(glm.clamp(bounds.min, self.min+0.5, self.max-0.5))
         valid_block = min_block is not None
         if valid_block:
             if not min_block.is_solid:
@@ -271,7 +267,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             else:
                 blocks.append(min_block)
         if not valid_block:
-            min_block = self.get_block(bounds.pos)
+            min_block = self.get_block(glm.clamp(bounds.pos, self.min+0.5, self.max-0.5))
             valid_block = min_block is not None
             if valid_block:
                 if not min_block.is_solid:
@@ -279,7 +275,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
                 else:
                     blocks.append(min_block)
             if not valid_block:
-                max_block = self.get_block(bounds.max)
+                max_block = self.get_block(glm.clamp(bounds.max, self.min+0.5, self.max-0.5))
                 valid_block = max_block is not None
                 if valid_block:
                     if not max_block.is_solid:

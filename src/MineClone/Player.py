@@ -254,7 +254,7 @@ class Player(PhysicalBox):
         if not num_blocks:
             return # No colliding blocks so no collisions
 
-        print(block.pos)
+        print(num_blocks)
         grounded: bool = False  # Assume not grounded initially
 
         # Initialize the correction vector and collision array
