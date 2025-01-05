@@ -110,7 +110,10 @@ class Game:
         self.ubo_face_tex_positions.print_data()
         self.ubo_face_tex_sizes.print_data()
 
-        self.world = World()
+        # self.world = World()
+        # quit()
+        self.world = World(_from_file=True)
+
         self.mesh = self.world.spawn_region.get_mesh()
         self.mesh.add_texture("tex0", face.texture_atlas)
 

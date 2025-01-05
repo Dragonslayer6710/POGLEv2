@@ -166,63 +166,72 @@ class Region(MCPhys, aabb=REGION.AABB):
         # Keep track of current sector offset (starting after the header)
         current_sector_offset = 2  # Locations and timestamps use up 2 sectors (4096 bytes each)
 
-        for chunk_index, chunk in enumerate(self.chunks):
-            if isinstance(chunk, Chunk):
-                compressed_data = chunk.serialize(compress=True)
+        chunk_index = 0
+        for chunks_on_z in self.chunks:
+            for chunk in chunks_on_z:
+                if isinstance(chunk, Chunk):
+                    print(chunk.min)
+                    compressed_data = chunk.serialize(compress=True)
+                    # Length of remaining chunk data bytes = compression type byte + compressed chunk
+                    comp_data_length = 1 + len(compressed_data)
 
-                # Length of remaining chunk data bytes = compression type byte + compressed chunk
-                comp_data_length = 1 + len(compressed_data)
+                    # Calculate how many 4096-byte sectors this compressed data will take
+                    sector_count = (comp_data_length + 4096) // 4096
 
-                # Calculate how many 4096-byte sectors this compressed data will take
-                sector_count = (comp_data_length + 4096) // 4096
+                    # Write location data (3-byte sector offset + 1-byte sector count)
+                    chunk_locations[chunk_index * 4:chunk_index * 4 + 3] = current_sector_offset.to_bytes(3,
+                                                                                                          byteorder="big")
+                    chunk_locations[chunk_index * 4 + 3] = sector_count
+                    # Write timestamp (4 bytes Unix timestamp)
+                    chunk_timestamps[chunk_index * 4:chunk_index * 4 + 4] = chunk.timestamp.to_bytes(4, byteorder="big")
 
-                # Write location data (3-byte sector offset + 1-byte sector count)
-                chunk_locations[chunk_index * 4:chunk_index * 4 + 3] = current_sector_offset.to_bytes(3,
-                                                                                                      byteorder="big")
-                chunk_locations[chunk_index * 4 + 3] = sector_count
+                    # Add the chunk data to the payload
+                    chunk_data.extend(comp_data_length.to_bytes(4, byteorder="big"))  # Length of the compressed data
+                    chunk_data.append(compression_type)  # 1 byte for the compression type
+                    chunk_data.extend(compressed_data)  # Actual compressed data
 
-                # Write timestamp (4 bytes Unix timestamp)
-                chunk_timestamps[chunk_index * 4:chunk_index * 4 + 4] = chunk.timestamp.to_bytes(4, byteorder="big")
+                    # Pad this chunk's data to the nearest 4096 bytes
+                    chunk_padding_length = (4096 - (len(chunk_data) % 4096)) % 4096
+                    chunk_data.extend(b'\x00' * chunk_padding_length)
 
-                # Add the chunk data to the payload
-                chunk_data.extend(comp_data_length.to_bytes(4, byteorder="big"))  # Length of the compressed data
-                chunk_data.append(compression_type)  # 1 byte for the compression type
-                chunk_data.extend(compressed_data)  # Actual compressed data
+                    # Update the current sector offset by the number of sectors used
+                    current_sector_offset += sector_count
 
-                # Pad this chunk's data to the nearest 4096 bytes
-                chunk_padding_length = (4096 - (len(chunk_data) % 4096)) % 4096
-                chunk_data.extend(b'\x00' * chunk_padding_length)
+                else:
+                    # Mark missing chunks with zero in the locations and timestamps
+                    chunk_locations[chunk_index * 4:chunk_index * 4 + 4] = b"\x00\x00\x00\x00"
+                    chunk_timestamps[chunk_index * 4:chunk_index * 4 + 4] = b"\x00\x00\x00\x00"
 
-                # Update the current sector offset by the number of sectors used
-                current_sector_offset += sector_count
-
-            else:
-                # Mark missing chunks with zero in the locations and timestamps
-                chunk_locations[chunk_index * 4:chunk_index * 4 + 4] = b"\x00\x00\x00\x00"
-                chunk_timestamps[chunk_index * 4:chunk_index * 4 + 4] = b"\x00\x00\x00\x00"
-
+                chunk_index += 1
         # Combine everything into the final region file bytes
         region_bytes = chunk_locations + chunk_timestamps + chunk_data
         return region_bytes
 
     @classmethod
     def deserialize(self, region_data: bytes, wrid: int) -> Region:
+        region = Region(wrid)
+
         # Parse the 4096-byte chunk locations table and 4096-byte timestamps table
         chunk_locations = region_data[:4096]
         chunk_timestamps = region_data[4096:8192]
         chunk_payloads = region_data[8192:]
 
-        chunks = []
-
+        chunks = region.chunks = []
+        z = -1
         for chunk_index in range(1024):  # There are up to 1024 chunks in a region (32x32 grid)
             # Extract the chunk location info (3 bytes offset, 1 byte sector count)
             location_entry = chunk_locations[chunk_index * 4: chunk_index * 4 + 4]
             sector_offset = int.from_bytes(location_entry[:3], byteorder="big")
             sector_count = location_entry[3]
 
+            x = chunk_index % REGION.WIDTH
+            if x == 0:
+                z += 1
+                chunks.append([])
+
             if sector_offset == 0 and sector_count == 0:
                 # No data for this chunk (it's empty)
-                chunks.append(None)
+                chunks[z].append(None)
                 continue
 
             # Extract the timestamp for the chunk (4 bytes)
@@ -246,12 +255,14 @@ class Region(MCPhys, aabb=REGION.AABB):
             compressed_chunk_data = chunk_data[5:4 + data_length]
 
             # Create the Chunk object from the NBT data (assuming you have a method for this)
-            chunk = Chunk.deserialize(compressed_chunk_data, compression_type)
+            chunk = Chunk.deserialize(compressed_chunk_data, region, compression_type)
+            print(chunk.min)
+
             chunk.timestamp = timestamp  # Reassign the timestamp to the chunk
 
             # Append the chunk to the list
-            chunks.append(chunk)
-        return Region(wrid, chunks)
+            chunks[z].append(chunk)
+        return region
 
     def get_shape(self) -> BlockShape:
         block_instances = []

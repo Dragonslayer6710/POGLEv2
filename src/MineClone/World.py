@@ -154,9 +154,11 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     def region_from_file(self, wrid: glm.ivec2) -> Region:
         region = World.load_region_from_file(wrid, self.file_path)
-        region.initialize(wrid, self)
-        self.update_region_in_lists(region)
-        self.regions[wrid] = region
+        region.initialize(glm.vec3(wrid[0], CHUNK.HEIGHT_HALF_INT,wrid[1]), self)
+        region.update()
+        wrid += WORLD.WIDTH // 2
+        #self.update_region_in_lists(region)
+        self.regions[int(wrid[0])][int(wrid[1])] = region
 
     @property
     def spawn_region_index(self) -> glm.ivec2:
@@ -201,8 +203,9 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     @staticmethod
     def load_region_from_file(wrid: int, world_file_path: str = os.getcwd() + "\\world\\") -> Region:
-        orel_wr_coords = wrid_to_wr_coords(wrid) - WORLD_REGION_WIDTH_HALF
-        region_file_path = world_file_path + f"\\region\\r.{int(orel_wr_coords[0])}.{int(orel_wr_coords[1])}.mcr"
+        # orel_wr_coords = wrid_to_wr_coords(wrid) - WORLD.EXTENTS_HALF_INT
+        #region_file_path = world_file_path + f"\\region\\r.{int(orel_wr_coords[0])}.{int(orel_wr_coords[1])}.mcr"
+        region_file_path = world_file_path + f"\\region\\r.{int(wrid[0])}.{int(wrid[1])}.mcr"
         with open(region_file_path, "rb") as f:
             return Region.deserialize(
                 f.read(),

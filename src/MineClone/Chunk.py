@@ -141,7 +141,35 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         offset_xz = REGION.CHUNK_OFFSETS[self.index[1]][self.index[0]]
         self.pos = self.region.pos.xyz + glm.vec3(offset_xz[0], 0, offset_xz[1])
         self.region.chunk_query_cache[self.pos.xz] = self
-        chunk_gen.gen_chunk(self)
+
+        if not self._from_nbt:
+            chunk_gen.gen_chunk(self)
+        else:
+            block_index = 0
+            for y in CHUNK.HEIGHT_RANGE_REVERSE:
+                section = self.blocks[y]
+                for z, z_axis in enumerate(section):
+                    for x, block in enumerate(z_axis):
+                        face_index = block_index * 6
+                        self.block_face_instance_data[face_index: face_index + 6] = block.face_instance_data
+                        block.index = glm.ivec3(y, z, x)
+                        block.pos += glm.vec3(x, y, z)
+                        block.initialize(self)
+
+                        if x > 0:
+                            block.neighbours[Side.West] = self.blocks[y][z][x - 1]
+                            self.blocks[y][z][x - 1].neighbours[Side.East] = block
+
+                        if y < CHUNK.HEIGHT - 1:
+                            block.neighbours[Side.Top] = self.blocks[y + 1][z][x]
+                            self.blocks[y + 1][z][x].neighbours[Side.Bottom] = block
+
+                        if z > 0:
+                            block.neighbours[Side.North] = self.blocks[y][z - 1][x]
+                            self.blocks[y][z - 1][x].neighbours[Side.South] = block
+
+                        self.block_instance_data[block_index] = block.instance_data
+                        block_index += 1
         # for y, section in enumerate(self.blocks):
         #     y_index = y * CHUNK.SECTION_NUM_BLOCKS
         #     for z, yz_plane in enumerate(section):
@@ -298,7 +326,8 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
     def to_nbt(self) -> nbtlib.Compound:
         return nbtlib.Compound({
-            "index": nbtlib.Int(self.index),
+            "xIndex": nbtlib.Int(self.index[0]),
+            "zIndex": nbtlib.Int(self.index[1]),
             "DataVersion": nbtlib.Int(1),
             "xPos": nbtlib.Int(self.pos.x),  # x position of chunk in chunks not relative to region
             "zPos": nbtlib.Int(self.pos.z),  # z position of chunk in chunks not relative to region
@@ -308,10 +337,9 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             "sections": nbtlib.List(
                 [
                     nbtlib.Compound({
-                        "Y": nbtlib.Byte(y - 128),
+                        "Y": nbtlib.Byte(y - CHUNK.HEIGHT),
                         "block_states": block_state_compound(
-                            self.blocks[
-                            y * CHUNK.SECTION_NUM_BLOCKS: y * CHUNK.SECTION_NUM_BLOCKS + CHUNK.SECTION_NUM_BLOCKS]
+                            np.array(self.blocks[y]).flatten(),
                         ),
                         # "biomes": biome_compound(
                         #    None#self.blocks[y * SECTION_NUM_BIOMES: y * SECTION_NUM_BIOMES + SECTION_NUM_BIOMES]
@@ -367,27 +395,32 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         })
 
     @classmethod
-    def from_nbt(cls, nbt_data: nbtlib.Compound) -> Chunk:
+    def from_nbt(cls, nbt_data: nbtlib.Compound, region: Region) -> Chunk:
         blocks = []
-        section_block_range = CHUNK.SECTION_BLOCK_RANGE  # Cache SECTION_BLOCK_RANGE
+        section_block_range = CHUNK.SECTION_RANGE  # Cache SECTION_BLOCK_RANGE
         _Block = Block  # Cache Block class
         block_in_chunk_index = 0
         for section in nbt_data["sections"]:
-            y = section["Y"] + 128  # Reverse the Y calculation
+            y = section["Y"] + CHUNK.HEIGHT  # Reverse the Y calculation
             block_states = section["block_states"]  # Call function to parse block states
             block_states_palette = block_states["palette"]
             block_states_data = block_states.get("data")
+
             if block_states_data is not None:
                 # blocks.extend([
                 #    _Block(block_states_palette[palette_index]["BlockID"])
                 #    for palette_index in enumerate(block_states_data)
                 # ])
-                blocks.extend(
+                section_blocks = list(
                     _Block.from_nbt(block_in_chunk_index, block_states_palette[entry]) for entry in block_states_data
                 )
             else:
                 default_block_nbt = block_states_palette[0]
-                blocks.extend(_Block.from_nbt(block_in_chunk_index, default_block_nbt) for _ in section_block_range)
+                section_blocks = list(
+                    _Block.from_nbt(block_in_chunk_index, default_block_nbt) for _ in section_block_range
+                )
+
+            blocks.append(np.array_split(section_blocks, CHUNK.WIDTH))
             block_in_chunk_index += 1
             # biomes = parse_biomes(section["biomes"])  # Call function to parse biomes
             # block_light = section["BlockLight"]  # Byte array, can be used directly or processed
@@ -402,7 +435,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             #     "sky_light": sky_light
             # })
 
-        chunk = Chunk(int(nbt_data["index"]), blocks, _from_nbt=True)
+        chunk = Chunk(glm.ivec2(int(nbt_data["xIndex"]), int(nbt_data["zIndex"])), blocks, _from_nbt=True, region=region)
         chunk.pos = glm.vec3(nbt_data["xPos"], CHUNK.EXTENTS_HALF.y,
                              nbt_data["zPos"])  # Assuming Position is a class that holds x and z
         chunk.status = nbt_data["Status"]
@@ -457,14 +490,14 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             return chunk_data
 
     @classmethod
-    def deserialize(cls, chunk_data: bytes, compression_type: Optional[int] = None) -> Chunk:
+    def deserialize(cls, chunk_data: bytes, region: Region, compression_type: Optional[int] = None) -> Chunk:
         if compression_type is not None:
             chunk_data = _decompress_chunk_data(chunk_data, compression_type)
 
         # Parse the NBT data to recreate the chunk
         with BytesIO(chunk_data) as f:
             chunk_nbt = nbtlib.File.parse(f)
-        return cls.from_nbt(chunk_nbt)
+        return cls.from_nbt(chunk_nbt, region)
 
     def get_shape(self) -> BlockShape:
         return BlockShape(
