@@ -528,7 +528,6 @@ class TerrainGenerator:
         if chunk_pos is not None:
             biome_values: np.ndarray = np.zeros(grid_shape_2d)
             solid_values: np.ndarray = np.zeros(grid_shape_3d)
-        chunk_pos -= CHUNK.EXTENTS_HALF
 
         c_noise_values: np.ndarray = self.c_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
         t_noise_values: np.ndarray = self.t_ngen.grid_sample(grid_coords_2d, grid_shape_2d)
@@ -652,7 +651,6 @@ class TerrainGenerator:
                         if density > 0:
                             solid_values[y][z][x] = True
 
-        chunk_pos += CHUNK.EXTENTS_HALF
         print(f"\nBiome distribution for position {chunk_pos}: {biome_talley}")
         if chunk is None:
             return solid_values

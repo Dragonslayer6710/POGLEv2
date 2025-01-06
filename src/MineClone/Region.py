@@ -209,14 +209,12 @@ class Region(MCPhys, aabb=REGION.AABB):
 
     @classmethod
     def deserialize(self, region_data: bytes, wrid: int) -> Region:
-        region = Region(wrid)
-
         # Parse the 4096-byte chunk locations table and 4096-byte timestamps table
         chunk_locations = region_data[:4096]
         chunk_timestamps = region_data[4096:8192]
         chunk_payloads = region_data[8192:]
 
-        chunks = region.chunks = []
+        chunks = []
         z = -1
         for chunk_index in range(1024):  # There are up to 1024 chunks in a region (32x32 grid)
             # Extract the chunk location info (3 bytes offset, 1 byte sector count)
@@ -255,14 +253,16 @@ class Region(MCPhys, aabb=REGION.AABB):
             compressed_chunk_data = chunk_data[5:4 + data_length]
 
             # Create the Chunk object from the NBT data (assuming you have a method for this)
-            chunk = Chunk.deserialize(compressed_chunk_data, region, compression_type)
+            chunk = Chunk.deserialize(compressed_chunk_data, compression_type)
             print(chunk.min)
 
             chunk.timestamp = timestamp  # Reassign the timestamp to the chunk
 
             # Append the chunk to the list
             chunks[z].append(chunk)
-        return region
+        print()
+        return Region(wrid, chunks, _from_bytes=True)
+
 
     def get_shape(self) -> BlockShape:
         block_instances = []

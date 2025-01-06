@@ -142,6 +142,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         self.pos = self.region.pos.xyz + glm.vec3(offset_xz[0], 0, offset_xz[1])
         self.region.chunk_query_cache[self.pos.xz] = self
 
+        self.pos -= CHUNK.EXTENTS_HALF
         if not self._from_nbt:
             chunk_gen.gen_chunk(self)
         else:
@@ -170,6 +171,15 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
 
                         self.block_instance_data[block_index] = block.instance_data
                         block_index += 1
+        self.pos += CHUNK.EXTENTS_HALF
+
+        print(self.index)
+        print(self.region.pos)
+        print(self.pos)
+        print(self.blocks[0][0][0].pos)
+        print(self.blocks[0][0][8].pos)
+        print(self.blocks[0][0][9].pos)
+        print()
         # for y, section in enumerate(self.blocks):
         #     y_index = y * CHUNK.SECTION_NUM_BLOCKS
         #     for z, yz_plane in enumerate(section):
@@ -395,7 +405,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         })
 
     @classmethod
-    def from_nbt(cls, nbt_data: nbtlib.Compound, region: Region) -> Chunk:
+    def from_nbt(cls, nbt_data: nbtlib.Compound) -> Chunk:
         blocks = []
         section_block_range = CHUNK.SECTION_RANGE  # Cache SECTION_BLOCK_RANGE
         _Block = Block  # Cache Block class
@@ -435,7 +445,7 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             #     "sky_light": sky_light
             # })
 
-        chunk = Chunk(glm.ivec2(int(nbt_data["xIndex"]), int(nbt_data["zIndex"])), blocks, _from_nbt=True, region=region)
+        chunk = Chunk(glm.ivec2(int(nbt_data["xIndex"]), int(nbt_data["zIndex"])), blocks, _from_nbt=True)
         chunk.pos = glm.vec3(nbt_data["xPos"], CHUNK.EXTENTS_HALF.y,
                              nbt_data["zPos"])  # Assuming Position is a class that holds x and z
         chunk.status = nbt_data["Status"]
@@ -490,14 +500,14 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
             return chunk_data
 
     @classmethod
-    def deserialize(cls, chunk_data: bytes, region: Region, compression_type: Optional[int] = None) -> Chunk:
+    def deserialize(cls, chunk_data: bytes, compression_type: Optional[int] = None) -> Chunk:
         if compression_type is not None:
             chunk_data = _decompress_chunk_data(chunk_data, compression_type)
 
         # Parse the NBT data to recreate the chunk
         with BytesIO(chunk_data) as f:
             chunk_nbt = nbtlib.File.parse(f)
-        return cls.from_nbt(chunk_nbt, region)
+        return cls.from_nbt(chunk_nbt)
 
     def get_shape(self) -> BlockShape:
         return BlockShape(

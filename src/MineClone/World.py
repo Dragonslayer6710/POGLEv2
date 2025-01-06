@@ -154,7 +154,7 @@ class World(MCPhys, aabb=WORLD.AABB):
 
     def region_from_file(self, wrid: glm.ivec2) -> Region:
         region = World.load_region_from_file(wrid, self.file_path)
-        region.initialize(glm.vec3(wrid[0], CHUNK.HEIGHT_HALF_INT,wrid[1]), self)
+        region.initialize(glm.vec3(wrid[0], CHUNK.HEIGHT_HALF_INT, wrid[1]), self)
         region.update()
         wrid += WORLD.WIDTH // 2
         #self.update_region_in_lists(region)
