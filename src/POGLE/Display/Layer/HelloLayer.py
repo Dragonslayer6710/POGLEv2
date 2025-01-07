@@ -13,8 +13,7 @@ class HelloLayer(Layer):
         game = Game()
 
         self.initUpdate = True
-        self.cursor_timer = 0
-        self.tab_timer = 0
+
 
     def OnEvent(self, e: Event):
         typ = e.getEventType()
@@ -84,26 +83,6 @@ class HelloLayer(Layer):
             self.initUpdate = False
         self._Renderer.clear()
 
-        if self.cursor_timer > 0: self.cursor_timer -= 1
-        if self.tab_timer > 0: self.tab_timer-=1
-
-        for boundCtrl in GetBoundControls():
-            ctrlID = boundCtrl.GetID()
-            if boundCtrl.GetInputState().value:
-                if ctrlID == Control.ID.Config.CAM_CTRL_TGL:
-                    if not self.cursor_timer:
-                        game.playerCam.look_enabled(self.toggle_cam_control())
-                        self.cursor_timer = 10
-                elif ctrlID == Control.ID.Config.QUIT:
-                    GetApplication().close()
-                elif ctrlID == Control.ID.Config.CYCLE_RENDER_DISTANCE:
-                    if not self.tab_timer:
-                        self.renderDistance = (self.renderDistance + 1 - self.minRenderDistance) % self.renderDistanceRangeSize + self.minRenderDistance
-                        game.worldRenderer.set_render_distance(self.renderDistance)
-                        print(game.worldRenderer)
-                        print(self.renderDistance + 1)
-                        self.tab_timer = 20
-
         if game.playerCam.process_mouse:
             inpStat.s_MouseDeltaX = inpStat.s_NextMousePosX - inpStat.s_MousePosX
             inpStat.s_MouseDeltaY = inpStat.s_MousePosY - inpStat.s_NextMousePosY
@@ -117,12 +96,3 @@ class HelloLayer(Layer):
         view = game.playerCam.get_view_matrix()
         game.update(deltaTime, projection, view)
         game.draw()
-
-    def toggle_cam_control(self) -> bool:
-        window = GetApplication().get_window()
-        if window.is_cursor_hidden():
-            window.reveal_cursor()
-            return False
-        else:
-            window.hide_cursor()
-            return True

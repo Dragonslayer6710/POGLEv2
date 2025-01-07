@@ -1,3 +1,4 @@
+from __future__ import annotations
 from POGLE.Input.Input import *
 
 
@@ -85,21 +86,21 @@ class Control:
         BOUND = 1
 
     @staticmethod
-    def New(ctrlID: ID):
-        _NewControl(Control(ctrlID))
+    def New(controls: ControlSet, ctrlID: ID):
+        controls._NewControl(Control(controls, ctrlID))
 
     @staticmethod
-    def Get(ctrlID: ID):
-        if ctrlID not in _Controls.keys():
-            Control.New(ctrlID)
-        return _Controls[ctrlID]
+    def Get(controls: ControlSet, ctrlID: ID):
+        if ctrlID not in controls._Controls.keys():
+            Control.New(controls, ctrlID)
+        return controls._Controls[ctrlID]
 
-    def BindInput(self, input: Input):
+    def BindInput(self, controls: ControlSet, input: Input):
         self._BoundInput = input
-        self._UpdateControlBind()
+        self._UpdateControlBind(controls)
 
-    def UnbindInput(self):
-        self.BindInput(None)
+    def UnbindInput(self, controls: ControlSet):
+        self.BindInput(controls, None)
 
     def GetID(self) -> ID:
         return self._ControlID
@@ -110,59 +111,51 @@ class Control:
     def GetInputState(self) -> Input.State:
         return self._BoundInput.InstGetState()
 
-    def __init__(self, ctrlID: ID, inp: Input = None):
+    def __init__(self, controls: ControlSet, ctrlID: ID, inp: Input = None):
         self._ControlID = ctrlID
-        self._InitControl()
+        self._InitControl(controls)
         if inp:
-            BindInput()
+            controls.BindInput()
 
-    def _InitControl(self):
-        _NewControl(self)
+    def _InitControl(self, controls: ControlSet):
+        controls._NewControl(self)
 
-    def _UpdateControlBind(self):
+    def _UpdateControlBind(self, controls: ControlSet):
         if self._BoundInput:
-            _BoundControls.append(self)
+            controls._BoundControls.append(self)
         else:
-            if self in _BoundControls:
-                _BoundControls.remove(self)
+            if self in controls._BoundControls:
+                controls._BoundControls.remove(self)
 
 
 CTRL = Control
 
-_Controls: dict[Control.ID, Control] = None
-_BoundControls: list[Control] = None
 
+class ControlSet:
+    _Controls: dict[Control.ID, Control] = None
+    _BoundControls: list[Control] = None
 
-def ResetControls(initialControls: dict[Control.ID, int] = None):
-    ResetInputs()
-    if initialControls:
-        for ctrlID, inputID in initialControls.items():
-            BindInput(ctrlID=ctrlID, inputID=inputID)
+    def __init__(self, initialControls: dict[Control.ID, int] = Control._InitialBinds):
+        self._Controls = {}
+        self._BoundControls = []
+        self.ResetControls(initialControls)
 
+    def ResetControls(self, initialControls: dict[Control.ID, int] = None):
+        ResetInputs()
+        if initialControls:
+            for ctrlID, inputID in initialControls.items():
+                self.BindInput(ctrlID=ctrlID, inputID=inputID)
 
-def _InitControls(initialControls: dict[Control.ID, int] = None):
-    global _Controls, _BoundControls
-    _Controls = {}
-    _BoundControls = []
-    ResetControls(initialControls)
+    def _NewControl(self, ctrl: Control):
+        self._Controls[ctrl.GetID()] = ctrl
 
+    def GetBoundControls(self) -> list[Control]:
+        return self._BoundControls
 
-def _NewControl(ctrl: Control):
-    _Controls[ctrl.GetID()] = ctrl
-
-
-def InitControls(initialControls: dict[Control.ID, int] = Control._InitialBinds):
-    _InitControls(initialControls)
-
-
-def GetBoundControls() -> list[Control]:
-    return _BoundControls
-
-
-def BindInput(ctrl: Control = None, inp: Input = None, ctrlID: Control.ID = None, inputID: int = None, ):
-    if inp == ctrl == None:
-        inp = Input.Get(inputID)
-        ctrl = Control.Get(ctrlID)
-        BindInput(ctrl, inp)
-    else:
-        ctrl.BindInput(inp)
+    def BindInput(self, ctrl: Control = None, inp: Input = None, ctrlID: Control.ID = None, inputID: int = None, ):
+        if inp == ctrl == None:
+            inp = Input.Get(inputID)
+            ctrl = Control.Get(self, ctrlID)
+            self.BindInput(ctrl, inp)
+        else:
+            ctrl.BindInput(self, inp)

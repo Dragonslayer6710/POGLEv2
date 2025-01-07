@@ -38,13 +38,14 @@ _PLAYER_REACH_RADIUS: float = 4.5
 
 class Player(PhysicalBox):
 
-    def __init__(self, world: World, feetPos: glm.vec3):
+    def __init__(self, world: World, feetPos: glm.vec3, controls: ControlSet):
         self.world: World = world
         self.regions: List[Region] = []
         self.chunks: List[List[Chunk]] = []
 
         self.bounds = AABB.from_pos_size(feetPos + _PLAYER_OFFSET_FEET_TO_CENTRE, _PLAYER_DIMENSIONS)
         camPos: glm.vec3 = self.pos + _PLAYER_CAMERA_INITIAL_OFFSET
+        self.controls = controls
         app = GetApplication()
         if app is not None:
             self.camera: Camera = Camera(camPos.x, camPos.y, camPos.z, aspectRatio=app.get_window().get_aspect_ratio())
@@ -126,7 +127,7 @@ class Player(PhysicalBox):
 
     def handle_input(self):
         self.moveVector: glm.vec3 = glm.vec3()
-        for ctrl in GetBoundControls():
+        for ctrl in self.controls.GetBoundControls():
             ctrlType = ctrl.GetType()
             if ctrlType == CTRL.Type.MOVEMENT:
                 self.handle_movement_input(ctrl)

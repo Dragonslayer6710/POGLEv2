@@ -12,7 +12,7 @@ import MineClone.Face as face
 class Game:
     def __init__(self):
         face.init_texture_atlas()
-        InitControls()
+        self.controls = ControlSet()
         #import dill
         #if os.path.exists("worldFile.dill"):
         #    with open("worldFile.dill", "rb") as f:
@@ -128,15 +128,46 @@ class Game:
 
         self.mesh.shader.use()
         self.mesh.bind_textures()
-        self.player: Player = Player(self.world, glm.vec3(1,CHUNK.HEIGHT+2,1))
+        self.player: Player = Player(self.world, glm.vec3(1,CHUNK.HEIGHT+2,1), self.controls)
         # self.world.update()
         # self.crosshairMesh = CrosshairMesh(glm.vec2(0.05 / GetApplication().get_window().get_aspect_ratio(), 0.05))
+
+        self.cursor_timer = 0
+        self.tab_timer = 0
 
     @property
     def playerCam(self) -> Camera:
         return self.player.camera
 
+    def toggle_cam_control(self) -> bool:
+        window = GetApplication().get_window()
+        if window.is_cursor_hidden():
+            window.reveal_cursor()
+            return False
+        else:
+            window.hide_cursor()
+            return True
+
     def update(self, deltaTime: float, projection: glm.mat4, view: glm.mat4):
+        for boundCtrl in self.controls.GetBoundControls():
+            ctrlID = boundCtrl.GetID()
+            if boundCtrl.GetInputState().value:
+                if ctrlID == Control.ID.Config.CAM_CTRL_TGL:
+                    if not self.cursor_timer:
+                        self.playerCam.look_enabled(self.toggle_cam_control())
+                        self.cursor_timer = 10
+                elif ctrlID == Control.ID.Config.QUIT:
+                    GetApplication().close()
+                elif ctrlID == Control.ID.Config.CYCLE_RENDER_DISTANCE:
+                    if not self.tab_timer:
+                        self.renderDistance = (self.renderDistance + 1 - self.minRenderDistance) % self.renderDistanceRangeSize + self.minRenderDistance
+                        self.worldRenderer.set_render_distance(self.renderDistance)
+                        print(self.renderDistance + 1)
+                        self.tab_timer = 20
+
+        if self.cursor_timer > 0: self.cursor_timer -= 1
+        if self.tab_timer > 0: self.tab_timer-=1
+
         self.player.update(deltaTime)
         # self.worldRenderer.update_origin(self.player.pos)
         self.ubo_mats.bind()
