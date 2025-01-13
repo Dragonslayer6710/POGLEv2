@@ -128,7 +128,7 @@ class _WORLD(_Constants):
         self.BLOCK_EXTENTS: glm.ivec3 = glm.ivec3(self.WIDTH, 1, self.WIDTH) * REGION.BLOCK_EXTENTS
         self.BLOCK_WIDTH: int = self.BLOCK_EXTENTS[0]
 
-        self.AABB = AABB.from_pos_size(size=self.EXTENTS * self.BLOCK_WIDTH)
+        self.AABB = AABB.from_pos_size(glm.vec3(0, CHUNK.HEIGHT // 2, 0), size=self.BLOCK_EXTENTS)
 
         self.SPAWN_CHUNK_WIDTH: int = SPAWN_CHUNK_WIDTH
         self.NUM_SPAWN_CHUNKS: int = self.SPAWN_CHUNK_WIDTH ** 2

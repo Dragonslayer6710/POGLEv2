@@ -277,9 +277,7 @@ class Block(MCPhys, aabb=BLOCK_BASE_AABB):
         is_air = self.block_id == BlockID.Air
         for face in range(6):
             opposite_face = _opposite_side[face]
-            # print(f"Index: {self.index}")
-            # print(f"Pos: {self.pos}")
-            # print(f"Neighbour: {face}")
+
             neighbour: Optional[Block] = self.neighbour(face)
             if DO_FACE_HIDING:
                 if neighbour is None:

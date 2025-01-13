@@ -172,14 +172,6 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
                         self.block_instance_data[block_index] = block.instance_data
                         block_index += 1
         self.pos += CHUNK.EXTENTS_HALF
-
-        print(self.index)
-        print(self.region.pos)
-        print(self.pos)
-        print(self.blocks[0][0][0].pos)
-        print(self.blocks[0][0][8].pos)
-        print(self.blocks[0][0][9].pos)
-        print()
         # for y, section in enumerate(self.blocks):
         #     y_index = y * CHUNK.SECTION_NUM_BLOCKS
         #     for z, yz_plane in enumerate(section):
@@ -296,42 +288,45 @@ class Chunk(MCPhys, aabb=CHUNK.AABB):
         return block
 
     def query(self, bounds: AABB) -> List[Block]:
-        blocks = []
-        min_block = self.get_block(glm.clamp(bounds.min, self.min+0.5, self.max-0.5))
-        valid_block = min_block is not None
-        if valid_block:
-            if not min_block.is_solid:
-                valid_block = False
-            else:
-                blocks.append(min_block)
-        if not valid_block:
-            min_block = self.get_block(glm.clamp(bounds.pos, self.min+0.5, self.max-0.5))
-            valid_block = min_block is not None
-            if valid_block:
-                if not min_block.is_solid:
-                    valid_block = False
-                else:
-                    blocks.append(min_block)
-            if not valid_block:
-                max_block = self.get_block(glm.clamp(bounds.max, self.min+0.5, self.max-0.5))
-                valid_block = max_block is not None
-                if valid_block:
-                    if not max_block.is_solid:
-                        valid_block = False
-                    else:
-                        blocks.append(max_block)
-                else:
-                    pass#raise RuntimeError("No blocks found for bounds: " + str(bounds))
-            return blocks
+        min_point = glm.floor(bounds.min)
+        max_point = glm.floor(bounds.max)
+        min_is_max_point = min_point == max_point
+        
+        if self.bounds.contains(bounds):
+            min_block = self.get_block(min_point)
+            if min_is_max_point:
+                return [min_block]
 
-        max_block = self.get_block(bounds.max)
+            max_block = self.get_block(max_point)
+        elif self.bounds.intersect_point(bounds.min):
+            min_block = self.get_block(min_point)
+            max_block = self.blocks[-1][-1][-1]
+        elif self.bounds.intersect_point(bounds.max):
+            min_block = self.blocks[0][0][0]
+            max_block = self.get_block(max_point)
+        else:
+            raise RuntimeError(f"""
+Bounds does not intersect Chunk:
+    - Bounds:
+        - Min: {bounds.min}
+        - Pos: {bounds.pos}
+        - Max: {bounds.max}
+    
+    - Chunk:
+        - Min: {self.min}
+        - Pos: {self.pos}
+        - Max: {self.max}
+""")
+
         if max_block is not min_block:
-            for y in range(min_block.index.x + 1, max_block.index.x + 1):
-                for z in range(min_block.index.y + 1, max_block.index.y + 1):
-                    for x in range(min_block.index.z + 1, max_block.index.z + 1):
-                        print((x, y, z))
+            blocks = []
+            for y in range(min_block.index.x, max_block.index.x + 1):
+                for z in range(min_block.index.y, max_block.index.y + 1):
+                    for x in range(min_block.index.z, max_block.index.z + 1):
                         blocks.append(self.blocks[y][z][x])
-        return blocks
+            return blocks
+        else:
+            return [min_block]
 
 
     def to_nbt(self) -> nbtlib.Compound:

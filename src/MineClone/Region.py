@@ -153,6 +153,46 @@ class Region(MCPhys, aabb=REGION.AABB):
                     chunks.append(self.chunks[x][z])
         return chunks
 
+    def query(self, bounds: AABB) -> List[Chunk]:
+        min_point = glm.floor(bounds.min)
+        max_point = glm.floor(bounds.max)
+        min_is_max_point = min_point == max_point
+
+        if self.bounds.contains(bounds):
+            min_chunk = self.get_chunk(min_point.xz)
+            if min_is_max_point:
+                return [min_chunk]
+
+            max_chunk = self.get_chunk(max_point.xz)
+        elif self.bounds.intersect_point(bounds.min, "y"):
+            min_chunk = self.get_chunk(min_point.xz)
+            max_chunk = self.chunks[-1][-1]
+        elif self.bounds.intersect_point(bounds.max, "y"):
+            min_chunk = self.chunks[0][0]
+            max_chunk = self.get_chunk(max_point.xz)
+        else:
+            raise RuntimeError(f"""
+Bounds does not intersect Region:
+    - Bounds:
+        - Min: {bounds.min}
+        - Pos: {bounds.pos}
+        - Max: {bounds.max}
+
+    - Chunk:
+        - Min: {self.min}
+        - Pos: {self.pos}
+        - Max: {self.max}
+""")
+
+        if max_chunk is not min_chunk:
+            chunks = []
+            for z in range(min_chunk.index[1], max_chunk.index[1] + 1):
+                for x in range(min_chunk.index[0], max_chunk.index[0] + 1):
+                    chunks.append(self.chunks[z][x])
+            return chunks
+        else:
+            return [min_chunk]
+
     @property
     def non_none_chunks(self) -> Tuple[Chunk]:
         return tuple(filter(lambda x: x is not None, self.chunks))
@@ -170,7 +210,6 @@ class Region(MCPhys, aabb=REGION.AABB):
         for chunks_on_z in self.chunks:
             for chunk in chunks_on_z:
                 if isinstance(chunk, Chunk):
-                    print(chunk.min)
                     compressed_data = chunk.serialize(compress=True)
                     # Length of remaining chunk data bytes = compression type byte + compressed chunk
                     comp_data_length = 1 + len(compressed_data)
@@ -254,13 +293,11 @@ class Region(MCPhys, aabb=REGION.AABB):
 
             # Create the Chunk object from the NBT data (assuming you have a method for this)
             chunk = Chunk.deserialize(compressed_chunk_data, compression_type)
-            print(chunk.min)
 
             chunk.timestamp = timestamp  # Reassign the timestamp to the chunk
 
             # Append the chunk to the list
             chunks[z].append(chunk)
-        print()
         return Region(wrid, chunks, _from_bytes=True)
 
 

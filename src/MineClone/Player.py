@@ -255,18 +255,19 @@ class Player(PhysicalBox):
         if not num_blocks:
             return # No colliding blocks so no collisions
 
-        print(num_blocks)
         grounded: bool = False  # Assume not grounded initially
 
         # Initialize the correction vector and collision array
         correctionVector: glm.vec3 = glm.vec3(0.0, 0.0, 0.0)
         collisions = [0.0 for _ in range(6)]  # Stores corrections in [+, -, +, -, +, -] for [x, y, z]
 
+        collided_blocks = []
         # Iterate through each block to check for collisions
         for block in colliding_blocks:
             if not block.is_solid:
                 continue
 
+            collided_blocks.append(block)
             # Retrieve the hit information from the block
             hit: Hit = block.recallHit(self.bounds)
             correction: glm.vec3 = hit.delta
@@ -293,7 +294,7 @@ class Player(PhysicalBox):
 
             # Handle Y-axis collisions for grounded state and vertical motion stopping
             if correction.y:
-                if correction.y > 0.0:
+                if correction.y > 0.0: # colliding below, so correct upwards
                     if grounded:
                         correctionVector.y -= correction.y  # Already grounded, remove this correction
                         continue
@@ -302,6 +303,24 @@ class Player(PhysicalBox):
                     if self.velocity.y <= 0.0:
                         correctionVector.y -= correction.y  # Only correct downward movement
                 self.velocity.y = 0.0  # Stop vertical velocity when colliding vertically
+
+        #correctionVector *= 1.0001
+        num_hits = len(collided_blocks)
+        # if num_hits:
+        #     print(f"\nHit: {num_hits}")
+        #     for i, block in enumerate(collided_blocks):
+        #         print(f"\nBlock {i}:")
+        #         print(f"\t- Position:\t{block.pos}")
+        #         print(f"\t- Min:\t\t{block.min}")
+        #         print(f"\t- Max:\t\t{block.max}")
+        #
+        # if correctionVector != glm.vec3(0.0, 0.0, 0.0):
+        #     print("\nPlayer: ")
+        #     print(f"\t- Position:\t{self.pos}")
+        #     print(f"\t- Min:\t\t{self.min}")
+        #     print(f"\t- Max:\t\t{self.max}")
+        #
+        #     print(f"\nCorrection: {correctionVector}")
         if not grounded:
             # Apply horizontal (X and Z) corrections
             if collisions[0] or collisions[1]:

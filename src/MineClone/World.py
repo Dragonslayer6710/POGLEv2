@@ -183,8 +183,9 @@ class World(MCPhys, aabb=WORLD.AABB):
         else:
             block = None
         if block is not None:
-            if block_pos != block.pos:
-                print()
+            pos_delta = block_pos - block.pos
+            if glm.round(pos_delta) != glm.vec3(0):
+                raise Exception(f"Wrong Block!:\n\t- Expected: {block_pos}\n\t- Obtained: {block.pos}")
         return block
 
     @staticmethod
@@ -350,6 +351,27 @@ class World(MCPhys, aabb=WORLD.AABB):
                     regions.append(self.regions[x][z])
         return regions
 
+    def query(self, bounds: AABB) -> List[Region]:
+        if not self.bounds.contains(bounds):
+            return []
+
+        min_point = glm.floor(bounds.min)
+        max_point = glm.floor(bounds.max)
+
+        if min_point == max_point:
+            return [self.get_region(min_point.xz)]
+
+        min_region = self.get_region(min_point.xz)
+        max_region = self.get_region(max_point.xz)
+
+        if max_region is not min_region:
+            regions = []
+            for z in range(min_region.index[1], max_region.index[1] + 1):
+                for x in range(min_region.index[0], max_region.index[0] + 1):
+                    regions.append(self.regions[z][x])
+            return regions
+        else:
+            return [min_region]
 
 
 @dataclass
