@@ -96,5 +96,20 @@ def mouse_callback(window: GLFWwindow, xpos: float, ypos: float) -> None:
 def scroll_callback(window: GLFWwindow, xoffset: float, yoffset: float) -> None:
     camera.ProcessMouseScroll(yoffset)
 
+do_profile=False
 if __name__ == "__main__":
-    main()
+    if do_profile:
+        import cProfile
+        # Run the main profiling function
+        profiler = cProfile.Profile()
+        profiler.enable()
+        main()  # your main function to profile
+        profiler.disable()
+
+        # Create a Stats object
+        stats = pstats.Stats(profiler)
+        stats.sort_stats('cumulative')  # or 'time', 'calls', etc.
+        stats.dump_stats("POGLE.prof")  # Print the profiling results
+
+    else:
+        main()
